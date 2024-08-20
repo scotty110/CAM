@@ -35,6 +35,9 @@ module physpkg
   use modal_aero_calcsize,    only: modal_aero_calcsize_init, modal_aero_calcsize_diag, modal_aero_calcsize_reg
   use modal_aero_wateruptake, only: modal_aero_wateruptake_init, modal_aero_wateruptake_dr, modal_aero_wateruptake_reg
 
+  ! Custom modules 
+  use simple_print,     only: print_cam
+
   implicit none
   private
   save
@@ -1011,6 +1014,11 @@ contains
     !
     call get_met_srf1( cam_in )
 #endif
+
+    ! Add AI Model
+    ! TODO
+    print *, "MADE IT HERE"
+    call print_cam(phys_state)
 
     ! The following initialization depends on the import state (cam_in)
     ! being initialized.  This isn't true when cam_init is called, so need
