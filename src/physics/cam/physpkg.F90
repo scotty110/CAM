@@ -1019,6 +1019,7 @@ contains
 #endif
 
     print *, "MADE IT HERE"
+    call print_cam(phys_state)
 
     ! The following initialization depends on the import state (cam_in)
     ! being initialized.  This isn't true when cam_init is called, so need
@@ -1092,8 +1093,6 @@ contains
 
     call t_adj_detailf(-1)
     call t_stopf ('bc_physics')
-
-    !call print_cam(phys_state)
 
     ! Don't call the rest in CRM mode
     if(single_column.and.scm_crm_mode) return

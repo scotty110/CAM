@@ -1,5 +1,5 @@
 module simple_print
-    !use camsrfexch,     only: cam_in_t
+    use camsrfexch,     only: cam_in_t
     use physics_types,  only: physics_state
     implicit none
 
@@ -8,8 +8,9 @@ module simple_print
 
 contains
 
-    subroutine print_cam(phys_state)
+    subroutine print_cam(phys_state, cam_in)
         type(physics_state), intent(in) :: phys_state(:) 
+        type(cam_in_t), intent(in) :: cam_in
         
         print *, "Entering print_cam subroutine"
         print *, "Number of elements in phys_state array:", size(phys_state)
