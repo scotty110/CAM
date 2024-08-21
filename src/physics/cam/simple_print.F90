@@ -3,6 +3,9 @@ module simple_print
     use physics_types,  only: physics_state
     implicit none
 
+    ! Public interface
+    public :: print_cam
+
 contains
 
     subroutine print_cam(phys_state)
