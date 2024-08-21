@@ -35,6 +35,9 @@ module physpkg
   use modal_aero_calcsize,    only: modal_aero_calcsize_init, modal_aero_calcsize_diag, modal_aero_calcsize_reg
   use modal_aero_wateruptake, only: modal_aero_wateruptake_init, modal_aero_wateruptake_dr, modal_aero_wateruptake_reg
 
+  ! Custom modules 
+  use simple_print,     only: print_cam
+
   implicit none
   private
   save
@@ -972,6 +975,9 @@ contains
     use spcam_drivers,  only: tphysbc_spcam
     use spmd_utils,     only: mpicom
     use physics_buffer, only: physics_buffer_desc, pbuf_get_chunk, pbuf_allocate
+
+    !use simple_print,      only: print_cam
+
 #if (defined BFB_CAM_SCAM_IOP )
     use cam_history,    only: outfld
 #endif
@@ -1011,6 +1017,9 @@ contains
     !
     call get_met_srf1( cam_in )
 #endif
+
+    print *, "MADE IT HERE"
+    call print_cam(phys_state)
 
     ! The following initialization depends on the import state (cam_in)
     ! being initialized.  This isn't true when cam_init is called, so need
@@ -1113,6 +1122,7 @@ contains
     use carma_intr,      only: carma_accumulate_stats
     use spmd_utils,      only: mpicom
     use iop_forcing,     only: scam_use_iop_srf
+
 #if ( defined OFFLINE_DYN )
     use metdata,         only: get_met_srf2
 #endif
