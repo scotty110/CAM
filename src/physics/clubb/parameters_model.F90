@@ -1,5 +1,5 @@
 !-------------------------------------------------------------------------------
-! $Id$
+! $Id: parameters_model.F90 7226 2014-08-19 15:52:41Z betlej@uwm.edu $
 !===============================================================================
 module parameters_model
 
@@ -82,8 +82,7 @@ module parameters_model
 ! References:
 !   None
 !-------------------------------------------------------------------------------
-    use parameters_tunable, only: &
-        Skw_max_mag
+    use constants_clubb, only: Skw_max_mag, Skw_max_mag_sqd
 
     use clubb_precision, only: &
       core_rknd ! Variable(s)
@@ -122,7 +121,7 @@ module parameters_model
     mixt_frac_max_mag = 1.0_core_rknd &
       - ( 0.5_core_rknd * ( 1.0_core_rknd - Skw_max_mag / &
       sqrt( 4.0_core_rknd * ( 1.0_core_rknd - 0.4_core_rknd )**3 &
-      + Skw_max_mag**2 ) ) ) ! Known magic number
+      + Skw_max_mag_sqd ) ) ) ! Known magic number
 
     T0       = T0_in
     ts_nudge = ts_nudge_in

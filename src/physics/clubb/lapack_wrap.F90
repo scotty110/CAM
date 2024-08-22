@@ -1,5 +1,5 @@
 !-----------------------------------------------------------------------
-! $Id$
+! $Id: lapack_wrap.F90 6849 2014-04-22 21:52:30Z charlass@uwm.edu $
 !===============================================================================
 module lapack_wrap
 
@@ -14,8 +14,15 @@ module lapack_wrap
   use constants_clubb, only:  & 
     fstderr ! Variable(s)
 
+  use error_code, only:  & 
+    clubb_singular_matrix,  & ! Variable(s)
+    clubb_bad_lapack_arg, & 
+    clubb_var_equals_NaN, &
+    clubb_no_error
+
   use clubb_precision, only: &
-    core_rknd ! Variable
+    core_rknd, & ! Variable(s)
+    dp
 
   implicit none
 
@@ -25,6 +32,14 @@ module lapack_wrap
   ! Expert routines
   public :: tridag_solvex, band_solvex
 
+  private :: lapack_isnan
+
+  ! A best guess for what the precision of a single precision and double
+  ! precision float is in LAPACK.  Hopefully this will work more portably on
+  ! architectures like Itanium than the old code -dschanen 11 Aug 2011
+  integer, parameter, private :: &
+    sp = kind ( 0.0 )
+
   private ! Set Default Scope
 
   contains
@@ -32,7 +47,7 @@ module lapack_wrap
 !-----------------------------------------------------------------------
   subroutine tridag_solvex( solve_type, ndim, nrhs, &
                             supd, diag, subd, rhs, &
-                            solution, rcond )
+                            solution, rcond, err_code )
 
 ! Description:
 !   Solves a tridiagonal system of equations (expert routine).
@@ -45,20 +60,18 @@ module lapack_wrap
 !   More expensive than the simple routine, but tridiagonal
 !   decomposition is still relatively cheap.
 !-----------------------------------------------------------------------
+    use error_code, only: &
+      clubb_at_least_debug_level ! Logical function
 
     use clubb_precision, only: &
       core_rknd ! Variable(s)
 
-    use error_code, only: &
-      clubb_at_least_debug_level,  & ! Procedure  
-      err_code,                    & ! Error Indicator
-      clubb_fatal_error              ! Constants
-
-    use lapack_interfaces, only: &
-      lapack_gtsvx, &      ! Procedure
-      lapack_isnan
-
     implicit none
+
+    ! External
+    external ::  & 
+      sgtsvx,  & ! Single-prec. General Tridiagonal Solver eXpert
+      dgtsvx     ! Double-prec. General Tridiagonal Solver eXpert
 
     intrinsic :: kind
 
@@ -83,6 +96,9 @@ module lapack_wrap
     ! precision, and info == ndim+1.  If rcond == 0, then the LHS matrix
     ! is singular.  This condition is indicated by a return code of info > 0.
     real( kind = core_rknd ), intent(out) :: rcond
+
+    integer, intent(out) ::  & 
+      err_code ! Used to determine when a decomp. failed
 
     ! Output variables
     real( kind = core_rknd ), intent(out), dimension(ndim,nrhs) ::  & 
@@ -119,13 +135,24 @@ module lapack_wrap
 !    $                   WORK, IWORK, INFO )
 !-----------------------------------------------------------------------
 
-    ! Lapack tridiagonal matrix solver, expert version, sgtsvx for single 
-    ! or dgtsvx for double precision
-    call lapack_gtsvx( "Not Factored", "No Transpose lhs", ndim, nrhs,  & 
-                       subd(2:ndim), diag, supd(1:ndim-1),  & 
-                       dlf, df, duf, du2, ipivot,  & 
-                       rhs, ndim, solution, ndim, rcond, & 
-                       ferr, berr, work, iwork, info )
+    if ( kind( diag(1) ) == dp ) then
+      call dgtsvx( "Not Factored", "No Transpose lhs", ndim, nrhs,  & 
+                   subd(2:ndim), diag, supd(1:ndim-1),  & 
+                   dlf, df, duf, du2, ipivot,  & 
+                   rhs, ndim, solution, ndim, rcond, & 
+                   ferr, berr, work, iwork, info )
+
+    else if ( kind( diag(1) ) == sp ) then
+      call sgtsvx( "Not Factored", "No Transpose lhs", ndim, nrhs,  & 
+                   subd(2:ndim), diag, supd(1:ndim-1),  & 
+                   dlf, df, duf, du2, ipivot,  & 
+                   rhs, ndim, solution, ndim, rcond, & 
+                   ferr, berr, work, iwork, info )
+
+    else
+      stop "tridag_solvex: Cannot resolve the precision of real datatype"
+
+    end if
 
     ! Print diagnostics for when ferr is large
     if ( clubb_at_least_debug_level( 2 ) .and. any( ferr > 1.e-3_core_rknd ) ) then
@@ -145,12 +172,14 @@ module lapack_wrap
     case( :-1 )
       write(fstderr,*) trim( solve_type )// & 
         "illegal value in argument", -info
-      err_code = clubb_fatal_error
+      err_code = clubb_bad_lapack_arg
 
     case( 0 )
       ! Success!
       if ( lapack_isnan( ndim, nrhs, solution ) ) then
-        err_code = clubb_fatal_error 
+        err_code = clubb_var_equals_NaN 
+      else
+        err_code = clubb_no_error
       end if
 
     case( 1: )
@@ -159,10 +188,11 @@ module lapack_wrap
           " Warning: matrix is singular to working precision."
         write(fstderr,'(a,e12.5)')  & 
           "Estimate of the reciprocal of the condition number: ", rcond
+        err_code = clubb_no_error
       else
         write(fstderr,*) solve_type// & 
           " singular matrix."
-        err_code = clubb_fatal_error
+        err_code = clubb_singular_matrix
       end if
 
     end select
@@ -174,7 +204,7 @@ module lapack_wrap
   subroutine tridag_solve & 
              ( solve_type, ndim, nrhs, &
                supd, diag, subd, rhs, &
-               solution )
+               solution, err_code )
 
 ! Description:
 !   Solves a tridiagonal system of equations (simple routine)
@@ -187,15 +217,12 @@ module lapack_wrap
     use clubb_precision, only: &
       core_rknd ! Variable(s)
 
-    use error_code, only: &
-      err_code,                    & ! Error Indicator
-      clubb_fatal_error              ! Constants
-      
-    use lapack_interfaces, only: &
-      lapack_gtsv, &       ! Procedure
-      lapack_isnan
-
     implicit none
+
+    ! External
+    external ::  & 
+      sgtsv,  & ! Single-prec. General Tridiagonal Solver eXpert
+      dgtsv     ! Double-prec. General Tridiagonal Solver eXpert
 
     intrinsic :: kind
 
@@ -219,7 +246,17 @@ module lapack_wrap
     real( kind = core_rknd ), intent(out), dimension(ndim,nrhs) ::  & 
       solution ! Solution
 
+
+    integer, intent(out) ::  & 
+      err_code ! Used to determine when a decomp. failed
+
     ! Local Variables
+
+    real( kind = dp ), dimension(ndim) :: &
+      subd_dp, supd_dp, diag_dp
+
+    real( kind = dp ), dimension(ndim,nrhs) :: &
+      rhs_dp
 
     integer :: info ! Diagnostic output
 
@@ -228,30 +265,50 @@ module lapack_wrap
 !       SUBROUTINE DGTSV( N, NRHS, DL, D, DU, B, LDB, INFO )
 !-----------------------------------------------------------------------
 
-    ! Interface for Lapack tridiagonal matrix solver, sgtsv for single 
-    ! or dgtsv for double precision
-    call lapack_gtsv( ndim, nrhs, subd(2:ndim), diag, supd(1:ndim-1),  & 
-                      rhs, ndim, info )
+    if ( kind( diag(1) ) == dp ) then
+      call dgtsv( ndim, nrhs, subd(2:ndim), diag, supd(1:ndim-1),  & 
+                  rhs, ndim, info )
+
+    else if ( kind( diag(1) ) == sp ) then
+      call sgtsv( ndim, nrhs, subd(2:ndim), diag, supd(1:ndim-1),  & 
+                  rhs, ndim, info )
+
+    else
+      !stop "tridag_solve: Cannot resolve the precision of real datatype"
+      ! Eric Raut Aug 2013: Force double precision
+      subd_dp = real( subd, kind=dp )
+      diag_dp = real( diag, kind=dp )
+      supd_dp = real( supd, kind=dp )
+      rhs_dp = real( rhs, kind=dp )
+      call dgtsv( ndim, nrhs, subd_dp(2:ndim), diag_dp, supd_dp(1:ndim-1),  &
+                  rhs_dp, ndim, info )
+      subd = real( subd_dp, kind=core_rknd )
+      diag = real( diag_dp, kind=core_rknd )
+      supd = real( supd_dp, kind=core_rknd )
+      rhs = real( rhs_dp, kind=core_rknd )
+    end if
 
     select case( info )
     case( :-1 )
       write(fstderr,*) trim( solve_type )// & 
         " illegal value in argument", -info
-      err_code = clubb_fatal_error
+      err_code = clubb_bad_lapack_arg
 
       solution = -999._core_rknd
 
     case( 0 )
       ! Success!
       if ( lapack_isnan( ndim, nrhs, rhs ) ) then
-        err_code = clubb_fatal_error 
+        err_code = clubb_var_equals_NaN 
+      else
+        err_code = clubb_no_error
       end if
 
       solution = rhs
 
     case( 1: )
       write(fstderr,*) trim( solve_type )//" singular matrix."
-      err_code = clubb_fatal_error
+      err_code = clubb_singular_matrix
 
       solution = -999._core_rknd
 
@@ -262,7 +319,7 @@ module lapack_wrap
 
 !-----------------------------------------------------------------------
   subroutine band_solvex( solve_type, nsup, nsub, ndim, nrhs,  & 
-                          lhs, rhs, solution, rcond )
+                          lhs, rhs, solution, rcond, err_code )
 ! Description:
 !   Restructure and then solve a band diagonal system, with
 !   diagnostic output
@@ -279,20 +336,18 @@ module lapack_wrap
 !   refinement of the solutions, which results in a slightly different answer
 !   than the simple driver does. -dschanen 24 Sep 2008
 !-----------------------------------------------------------------------
+    use error_code, only: &
+      clubb_at_least_debug_level ! Logical function
 
     use clubb_precision, only: &
       core_rknd ! Variable(s)
 
-    use error_code, only: &
-      clubb_at_least_debug_level,  & ! Procedure  
-      err_code,                    & ! Error Indicator
-      clubb_fatal_error              ! Constants
-
-    use lapack_interfaces, only: &
-      lapack_gbsvx, &      ! Procedures
-      lapack_isnan
-
     implicit none
+
+    ! External
+    external ::  & 
+      sgbsvx,  & ! Single-prec. General Band Solver eXpert
+      dgbsvx  ! Double-prec. General Band Solver eXpert
 
     intrinsic :: eoshift, kind, trim
 
@@ -318,6 +373,8 @@ module lapack_wrap
     ! after equilibration (if done).
     real( kind = core_rknd ), intent(out) ::  & 
       rcond
+
+    integer, intent(out) :: err_code ! Valid calculation?
 
     ! Local Variables
 
@@ -387,15 +444,27 @@ module lapack_wrap
 !    $                   RCOND, FERR, BERR, WORK, IWORK, INFO )
 !-----------------------------------------------------------------------
 
-    ! Lapack general band solver, expert version, sgbsvx for single 
-    ! or dgbsvx for double precision
-    call lapack_gbsvx( 'Equilibrate lhs', 'No Transpose lhs', & 
-                       ndim, nsub, nsup, nrhs, & 
-                       lhs, nsup+nsub+1, lulhs, 2*nsub+nsup+1, & 
-                       ipivot, equed, rscale, cscale, & 
-                       rhs, ndim, solution, ndim, & 
-                       rcond, ferr, berr, work, iwork, info )
+    if ( kind( lhs(1,1) ) == dp ) then
+      call dgbsvx( 'Equilibrate lhs', 'No Transpose lhs', & 
+                   ndim, nsub, nsup, nrhs, & 
+                   lhs, nsup+nsub+1, lulhs, 2*nsub+nsup+1,  & 
+                   ipivot, equed, rscale, cscale, & 
+                   rhs, ndim, solution, ndim, & 
+                   rcond, ferr, berr, work, iwork, info )
 
+    else if ( kind( lhs(1,1) ) == sp ) then
+      call sgbsvx( 'Equilibrate lhs', 'No Transpose lhs', & 
+                   ndim, nsub, nsup, nrhs, & 
+                   lhs, nsup+nsub+1, lulhs, 2*nsub+nsup+1, & 
+                   ipivot, equed, rscale, cscale, & 
+                   rhs, ndim, solution, ndim, & 
+                   rcond, ferr, berr, work, iwork, info )
+
+    else
+      stop "band_solvex: Cannot resolve the precision of real datatype"
+      ! One implication of this is that CLUBB cannot be used with quad
+      ! precision variables without a quad precision band diagonal solver
+    end if
 
 ! %% debug
 !       select case ( equed )
@@ -434,28 +503,30 @@ module lapack_wrap
     select case( info )
 
     case( :-1 )
-        write(fstderr,*) "in band_solvex for ", trim( solve_type ), &
-            ": illegal value for argument", -info
-        err_code = clubb_fatal_error
+      write(fstderr,*) trim( solve_type )// & 
+        " illegal value for argument", -info
+      err_code = clubb_bad_lapack_arg
 
     case( 0 )
       ! Success!
       if ( lapack_isnan( ndim, nrhs, solution ) ) then
-        err_code = clubb_fatal_error 
+        err_code = clubb_var_equals_NaN 
+      else
+        err_code = clubb_no_error
       end if
 
     case( 1: )
       if ( info == ndim+1 ) then
-
         write(fstderr,*) trim( solve_type )// & 
           " Warning: matrix singular to working precision."
         write(fstderr,'(a,e12.5)')  & 
           "Estimate of the reciprocal of the"// & 
           " condition number: ", rcond
+        err_code = clubb_no_error
       else
-        write(fstderr,*) "in band_solvex for", trim( solve_type ), &
-          ": singular matrix, solution not computed"    
-        err_code = clubb_fatal_error
+        write(fstderr,*) trim( solve_type )// & 
+          " band solver: singular matrix"
+        err_code = clubb_singular_matrix
       end if
 
     end select
@@ -465,7 +536,7 @@ module lapack_wrap
 
 !-----------------------------------------------------------------------
   subroutine band_solve( solve_type, nsup, nsub, ndim, nrhs,  & 
-                          lhs, rhs, solution )
+                          lhs, rhs, solution, err_code )
 ! Description:
 !   Restructure and then solve a band diagonal system
 
@@ -477,16 +548,13 @@ module lapack_wrap
     use clubb_precision, only: &
       core_rknd ! Variable(s)
 
-    use error_code, only: &
-      clubb_at_least_debug_level, &
-      err_code,                    & ! Error Indicator
-      clubb_fatal_error              ! Constants
-
-    use lapack_interfaces, only: &
-      lapack_gbsv, &       ! Procedures
-      lapack_isnan
-
     implicit none
+
+    ! External
+    external ::  & 
+      sgbsv,  & ! Single-prec. General Band Solver
+      dgbsv  ! Double-prec. General Band Solver
+
     intrinsic :: eoshift, kind, trim
 
     ! Input Variables
@@ -508,145 +576,71 @@ module lapack_wrap
     ! Output Variables
     real( kind = core_rknd ), dimension(ndim,nrhs), intent(out) :: solution
 
+    integer, intent(out) :: err_code ! Valid calculation?
+
     ! Local Variables
 
     ! Workspaces
     real( kind = core_rknd ), dimension(2*nsub+nsup+1,ndim) :: & 
       lulhs ! LU Decomposition of the LHS
 
+    real( kind = dp ), dimension(2*nsub+nsup+1,ndim) :: &
+      lulhs_dp
+
+    real( kind = dp ), dimension(ndim,nrhs) :: &
+      rhs_dp
+
     integer, dimension(ndim) ::  & 
       ipivot
 
     integer ::  & 
       info,   & ! If this doesn't come back as 0, something went wrong
+      offset, & ! Loop iterator
       imain  ! Main diagonal of the matrix
 
-    integer :: i, j
+    ! Copy LHS into Decomposition scratch space
+    lulhs = 0.0_core_rknd
+    lulhs(nsub+1:2*nsub+nsup+1, 1:ndim) = lhs(1:nsub+nsup+1, 1:ndim)
 
-    !-----------------------------------------------------------------------
-    !       Reorder LU Matrix to use LAPACK band matrix format
-    ! 
-    !       Shift example for lulhs matrix given a 5x5 lhs matrix
-    !           
-    !                       
-    !  lulhs =  
-    !                            Columns
-    !         1  2       3          4          5         6           7
-    ! Rows       
-    ! 1     [ 0  0       0          0      lhs(3,1)   lhs(4,2)   lhs(5,3) ]
-    ! 2     [ 0  0       0      lhs(2,1)   lhs(3,2)   lhs(4,3)   lhs(5,4) ]
-    ! 3     [ 0  0   lhs(1,1)   lhs(2,2)   lhs(3,3)   lhs(4,4)   lhs(5,5) ]
-    ! 4     [ 0  0   lhs(1,2)   lhs(2,3)   lhs(3,4)   lhs(4,5)       0    ]
-    ! 5     [ 0  0   lhs(1,3)   lhs(2,4)   lhs(3,5)       0          0    ]
-    !                       
-    !         all       lhs        lhs        lhs        lhs        lhs  
-    !        set to   shifted     shifted      no      shifted    shifted
-    !          0       down 2      down 1    shift      up 1        up 2
-    ! 
-    !   The first nsup columns of lulhs are always set to 0; 
-    !   the rest of the columns are set to shifted 
-    !   columns of lhs. This can be thought of as taking lhs, never touching the middle column, but
-    !   shifting the columns that are n columns to the left of the middle down by n rows, and then
-    !   shifting the columns that are n columns to the right of the middle up by n rows, finally 
-    !   adding nsup columns of zeros onto the left of the array. This results in lulhs.
-    !-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
+!       Reorder LU Matrix to use LAPACK band matrix format
+
+!       Shift example for lulhs matrix (note the extra bands):
+
+!       [    +        +        +        +        +        +     ]
+!       [    +        +        +        +        +        +     ]
+!       [    *        *     lhs(1,1) lhs(1,2) lhs(1,3) lhs(1,4) ] (2)=>
+!       [    *     lhs(2,1) lhs(2,2) lhs(2,3) lhs(2,4) lhs(2,5) ] (1)=>
+!       [ lhs(3,1) lhs(3,2) lhs(3,3) lhs(3,4) lhs(3,5) lhs(3,6) ]
+! <=(1) [ lhs(4,2) lhs(4,3) lhs(4,4) lhs(4,5) lhs(4,6)    *     ]
+! <=(2) [ lhs(5,3) lhs(5,4) lhs(5,5) lhs(5,6)    *        *     ]
+!       [    +        +        +        +        +        +     ]
+!       [    +        +        +        +        +        +     ]
+
+!       The '*' indicates unreferenced elements.
+!       The '+' indicates an element overwritten during decomposition.
+!       For additional bands above and below the main diagonal, the
+!       shifts to the left or right increases by the distance from the
+!       main diagonal of the matrix.
+!-----------------------------------------------------------------------
 
     ! Reorder lulhs, omitting the additional 2*nsub bands
     ! that are used for the LU decomposition of the matrix.
 
     imain = nsub + nsup + 1
 
-    
-    ! The first nsup rows of lulhs will contain 0s that are end-shifted lhs values. This needs
-    ! to be handled differently so the algorithm to access lhs will not try to use out of bound
-    ! values.
-    !             ...   nsup     nsup+1    ...       imain   ... 
-    !                        \ /                 \ /
-    !                always   |  begins with nsup | all lhs values
-    !                   0       0s, and decreases  
-    !                           by one 0 each row 
-    ! 
-    !              ...  nsup     nsup+1    ...       imain   ... 
-    ! lulhs(:,1) =  0     0       0         0         lhs    lhs
-    ! lulhs(:,2) =  0     0       0        lhs        lhs    lhs
-    ! 
-    ! Since the first nsup rows are the first rows in lulhs, we're going to access them first to
-    ! avoid out of order memory accesses.
-    do i = 1, nsup
+    ! For the offset, (+) is left, and (-) is right
 
-        ! Add 0s to first nsup columns, and decreasing number of end-shift affected columns
-        do j = 1, imain-i
-            lulhs(j,i) = 0.0_core_rknd
-        end do
-
-        ! Copy lhs values into appropriate lulhs spots
-        do j = imain-i+1, imain+nsub
-            lulhs(j,i) = lhs(j-nsub,i+j-imain)
-        end do
-
+    ! Sub diagonals
+    do offset = 1, nsub, 1
+      lulhs(imain+offset, 1:ndim) & 
+      = eoshift( lulhs(imain+offset, 1:ndim), offset )
     end do
 
-    ! After the first nsup rows are dealt with, the offset lhs values can be copied into lulhs
-    ! until the last nsup rows are reached. This is because the last nsup rows also contain
-    ! end-shifted values, set to 0 in the next loop.
-    ! 
-    !                      ...  nsup     nsup+1    ...  
-    !                                \ /   
-    !                       always    |    all lhs values                
-    ! 
-    !                      ...  nsup     nsup+1    ...    
-    ! lulhs(:,nsup+1)    =  0     0       lhs      lhs    
-    ! lulhs(:,ndim-nsub) =  0     0       lhs      lhs    
-    ! 
-    ! For all values not affected by end-shifting
-    do i = nsup+1, ndim-nsub
-
-        ! Set first nsup columns to 0
-        do j = 1, nsub
-            lulhs(j,i) = 0.0_core_rknd
-        end do
-
-        ! Copy lhs values into appropriate lulhs spots
-        do j = imain-nsub, imain+nsub
-            lulhs(j,i) = lhs(j-nsub, i+j-imain)
-        end do
-
-    end do
-
-
-    ! The last nsup rows of lulhs will contain 0s that are end-shifted lhs values. This needs
-    ! to be handled differently so the algorithm to access lhs will not try to use out of bound
-    ! values.
-    !             
-    ! 
-    !                        ...  nsup     nsup+1    ...      imain+1    ...    
-    ! lulhs(:,ndim-nsub+1) =  0     0       lhs      lhs        lhs       0  
-    ! lulhs(:,ndim)        =  0     0       lhs      lhs         0        0
-    !
-    !                                   |                   |   starts with one 0, then
-    !                          always   |   all lhs values  |  then increases to nsup 0s
-    !                                   |                   |       towards ndim
-    !                                  / \                 / \
-    !                        ...  nsup     nsup+1    ...          ndim-nsub+1 ... ndim
-    ! 
-    ! Finish the lulhs setup by accessing the last values last, keeping memory access ordered
-    do i = ndim-nsub+1, ndim
-    
-        ! Set first nsup columns to 0
-        do j = 1, nsub
-            lulhs(j,i) = 0.0_core_rknd
-        end do
-
-        ! Copy lhs values into appropriate lulhs spots
-        do j = imain-nsup, imain-(i-ndim)
-            lulhs(j,i) = lhs(j-nsub, i+j-imain)
-        end do
-
-        ! Set increasing number of end-shift affected columns to 0
-        do j = imain-(i-ndim)+1, imain+nsub
-            lulhs(j,i) = 0.0_core_rknd
-        end do
-        
+    ! Super diagonals
+    do offset = 1, nsup, 1
+      lulhs(imain-offset, 1:ndim) & 
+      = eoshift( lulhs(imain-offset, 1:ndim), -offset )
     end do
 
 !-----------------------------------------------------------------------
@@ -654,35 +648,121 @@ module lapack_wrap
 !       SUBROUTINE DGBSV( N, KL, KU, NRHS, AB, LDAB, IPIV, B, LDB, INFO )
 !-----------------------------------------------------------------------
 
-    ! Lapack general band solver, sgbsv for single 
-    ! or dgbsv for double precision
-    call lapack_gbsv( ndim, nsub, nsup, nrhs, lulhs, nsub*2+nsup+1,  & 
-                      ipivot, rhs, ndim, info )
+    if ( kind( lhs(1,1) ) == dp ) then
+      call dgbsv( ndim, nsub, nsup, nrhs, lulhs, nsub*2+nsup+1,  & 
+                  ipivot, rhs, ndim, info )
 
+    else if ( kind( lhs(1,1) ) == sp ) then
+      call sgbsv( ndim, nsub, nsup, nrhs, lulhs, nsub*2+nsup+1,  & 
+                  ipivot, rhs, ndim, info )
+
+    else
+      !stop "band_solve: Cannot resolve the precision of real datatype"
+      ! One implication of this is that CLUBB cannot be used with quad
+      ! precision variables without a quad precision band diagonal solver
+      ! Eric Raut Aug 2013: force double precision
+      lulhs_dp = real( lulhs, kind=dp )
+      rhs_dp = real( rhs, kind=dp )
+      call dgbsv( ndim, nsub, nsup, nrhs, lulhs_dp, nsub*2+nsup+1,  &
+                  ipivot, rhs_dp, ndim, info )
+      rhs = real( rhs_dp, kind=core_rknd )
+    end if
 
     select case( info )
 
     case( :-1 )
-          write(fstderr,*) "in band_solve for ", trim( solve_type ), &
-            ": illegal value for argument", -info
-          err_code = clubb_fatal_error
-    case( 0 )
-          ! Success!
-          if ( clubb_at_least_debug_level( 1 ) ) then
-              if ( lapack_isnan( ndim, nrhs, rhs ) ) then
-                err_code = clubb_fatal_error 
-              end if
-          end if
+      write(fstderr,*) trim( solve_type )// & 
+        " illegal value for argument ", -info
+      err_code = clubb_bad_lapack_arg
 
-          solution = rhs
+      solution = -999._core_rknd
+
+    case( 0 )
+      ! Success!
+      if ( lapack_isnan( ndim, nrhs, rhs ) ) then
+        err_code = clubb_var_equals_NaN 
+      else
+        err_code = clubb_no_error
+      end if
+
+      solution = rhs
 
     case( 1: )
-        write(fstderr,*) "in band_solve for ", trim( solve_type ), &
-                       ": singular matrix, solution not computed"
-        err_code = clubb_fatal_error
+      write(fstderr,*) trim( solve_type )//" band solver: singular matrix"
+      err_code = clubb_singular_matrix
+
+      solution = -999._core_rknd
+
     end select
 
     return
   end subroutine band_solve
+
+!-----------------------------------------------------------------------
+  logical function lapack_isnan( ndim, nrhs, variable )
+
+! Description:
+!   Check for NaN values in a variable using the LAPACK subroutines
+
+! References:
+!   <http://www.netlib.org/lapack/single/sisnan.f>
+!   <http://www.netlib.org/lapack/double/disnan.f>
+!-----------------------------------------------------------------------
+
+    use clubb_precision, only: &
+      core_rknd ! Variable(s)
+
+    implicit none
+#ifdef NO_LAPACK_ISNAN /* Used for older LAPACK libraries that don't have sisnan/disnan */
+
+    intrinsic :: any
+
+    integer, intent(in) :: &
+      ndim, & ! Size of variable
+      nrhs    ! Number of right hand sides
+
+    real( kind = core_rknd ), dimension(ndim,nrhs), intent(in) :: &
+      variable ! Variable to check
+
+    lapack_isnan = any( variable(:,1:nrhs) /= variable(:,1:nrhs) )
+#else
+    logical, external :: sisnan, disnan 
+
+    integer, intent(in) :: &
+      ndim, & ! Size of variable
+      nrhs    ! Number of right hand sides
+
+    real( kind = core_rknd ), dimension(ndim,nrhs), intent(in) :: &
+      variable ! Variable to check
+
+    integer :: k, j
+
+    ! ---- Begin Code ----
+
+    lapack_isnan = .false.
+
+    if ( kind( variable ) == dp ) then
+      do k = 1, ndim
+        do j = 1, nrhs
+          lapack_isnan = disnan( variable(k,j) )
+          if ( lapack_isnan ) exit
+        end do
+        if ( lapack_isnan ) exit
+      end do
+    else if ( kind( variable ) == sp ) then
+      do k = 1, ndim
+        do j = 1, nrhs
+          lapack_isnan = sisnan( variable(k,j) )
+          if ( lapack_isnan ) exit
+        end do
+        if ( lapack_isnan ) exit
+      end do
+    else
+      stop "lapack_isnan: Cannot resolve the precision of real datatype"
+    end if
+#endif /* NO_LAPACK_ISNAN */
+
+    return
+  end function lapack_isnan
 
 end module lapack_wrap

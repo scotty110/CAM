@@ -207,7 +207,6 @@ contains
         else
           call pio_setframe(ncid, varid, int(1,kind=pio_offset_kind))
         end if
-        ndims = ndims - 1
       end if
 
       ! NB: strt and cnt were initialized to 1
@@ -404,7 +403,7 @@ contains
           strt(1) = dim1b
           strt(2) = dim2b
           cnt = arraydimsize
-          call shr_scam_getCloseLatLon(ncid,scmlat,scmlon,closelat,closelon,latidx,lonidx)
+          call shr_scam_getCloseLatLon(ncid%fh,scmlat,scmlon,closelat,closelon,latidx,lonidx)
           if (trim(field_dnames(1)) == 'lon') then
             strt(1) = lonidx ! First dim always lon for Eulerian dycore
           else
@@ -626,7 +625,6 @@ contains
         else
           call pio_setframe(ncid, varid, int(1,kind=pio_offset_kind))
         end if
-        ndims = ndims - 1
       end if
 
       field_dnames(1) = dimname1
@@ -847,7 +845,7 @@ contains
           strt(2) = dim2b
           strt(3) = dim3b
           cnt = arraydimsize
-          call shr_scam_getCloseLatLon(ncid,scmlat,scmlon,closelat,closelon,latidx,lonidx)
+          call shr_scam_getCloseLatLon(ncid%fh,scmlat,scmlon,closelat,closelon,latidx,lonidx)
           if (trim(field_dnames(1)) == 'lon') then
             strt(1) = lonidx ! First dim always lon for Eulerian dycore
           else

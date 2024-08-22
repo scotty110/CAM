@@ -5,9 +5,11 @@ module mo_srf_emissions
 
   use shr_kind_mod,  only : r8 => shr_kind_r8
   use chem_mods,     only : gas_pcnst
-  use spmd_utils,    only : masterproc
+  use spmd_utils,    only : masterproc,iam
+  use mo_tracname,   only : solsym
   use cam_abortutils,only : endrun
   use ioFileMod,     only : getfil
+  use ppgrid,        only : pcols, begchunk, endchunk
   use cam_logfile,   only : iulog
   use tracer_data,   only : trfld,trfile
 
@@ -47,12 +49,13 @@ contains
     !-----------------------------------------------------------------------
 
     use chem_mods,        only : adv_mass
+    use mo_constants,     only : d2r, pi, rearth
+    use string_utils,     only : to_upper
     use mo_chem_utls,     only : get_spc_ndx 
     use tracer_data,      only : trcdata_init
     use cam_pio_utils,    only : cam_pio_openfile
     use pio,              only : pio_inquire, pio_nowrite, pio_closefile, pio_inq_varndims
-    use pio,              only : pio_inq_varname, pio_inq_vardimid, pio_inq_dimid
-    use pio,              only : file_desc_t, pio_get_att, PIO_NOERR, PIO_GLOBAL
+    use pio,              only : pio_inq_varname, file_desc_t, pio_get_att, PIO_NOERR, PIO_GLOBAL
     use pio,              only : pio_seterrorhandling, PIO_BCAST_ERROR,PIO_INTERNAL_ERROR
     use chem_surfvals,    only : flbc_list
     use string_utils,     only : GLC
@@ -83,9 +86,8 @@ contains
     integer  :: indx(gas_pcnst)
     real(r8) :: emis_scalefactor(gas_pcnst)
 
-    integer :: vid, nvars, isec, num_dims_emis
-    integer :: vndims
-    logical, allocatable :: is_sector(:)
+    integer :: vid, nvars, isec
+    integer, allocatable :: vndims(:)
     type(file_desc_t) :: ncid
     character(len=32)  :: varname
     character(len=256) :: locfn
@@ -93,15 +95,13 @@ contains
     character(len=1), parameter :: filelist = ''
     character(len=1), parameter :: datapath = ''
     logical         , parameter :: rmv_file = .false.
-    logical :: unstructured
+
     character(len=32) :: emis_type = ' '
     character(len=80) :: file_interp_type = ' '
     character(len=256) :: tmp_string = ' '
     character(len=32) :: xchr = ' '
     real(r8) :: xdbl
-    integer :: time_dimid, ncol_dimid
-    integer, allocatable :: dimids(:)
-    
+
     has_emis(:) = .false.
     nn = 0
     indx(:) = 0
@@ -189,51 +189,24 @@ contains
        
        call getfil (emissions(m)%filename, locfn, 0)
        call cam_pio_openfile ( ncid, trim(locfn), PIO_NOWRITE)
-       ierr = pio_inquire (ncid, nVariables=nvars)
+       ierr = pio_inquire (ncid, nvariables=nvars)
 
-       call pio_seterrorhandling(ncid, PIO_BCAST_ERROR)
-       ierr = pio_inq_dimid( ncid, 'ncol', ncol_dimid )
-       unstructured = ierr==PIO_NOERR
-       call pio_seterrorhandling(ncid, PIO_INTERNAL_ERROR)
-
-       allocate(is_sector(nvars))
-       is_sector(:) = .false.
-       
-       if (unstructured) then
-          ierr = pio_inq_dimid( ncid, 'time', time_dimid )
-       end if
+       allocate(vndims(nvars))
 
        do vid = 1,nvars
 
-          ierr = pio_inq_varndims (ncid, vid, vndims)
+          ierr = pio_inq_varndims (ncid, vid, vndims(vid))
 
-          if (unstructured) then
-             num_dims_emis = 2
-          else
-             num_dims_emis = 3
-          endif
-
-          if( vndims < num_dims_emis ) then
+          if( vndims(vid) < 3 ) then
              cycle
-          elseif( vndims > num_dims_emis ) then
+          elseif( vndims(vid) > 3 ) then
              ierr = pio_inq_varname (ncid, vid, varname)
-             write(iulog,*) 'srf_emis_inti: Skipping variable ', trim(varname),', ndims = ',vndims, &
+             write(iulog,*) 'srf_emis_inti: Skipping variable ', trim(varname),', ndims = ',vndims(vid), &
                   ' , species=',trim(emissions(m)%species)
              cycle
           end if
 
-          if (unstructured) then
-             allocate( dimids(vndims) )
-             ierr = pio_inq_vardimid( ncid, vid, dimids )
-             if ( any(dimids(:)==ncol_dimid) .and. any(dimids(:)==time_dimid) ) then
-                emissions(m)%nsectors = emissions(m)%nsectors+1
-                is_sector(vid)=.true.
-             endif
-             deallocate(dimids)
-          else
-             emissions(m)%nsectors = emissions(m)%nsectors+1
-             is_sector(vid)=.true.
-          end if
+          emissions(m)%nsectors = emissions(m)%nsectors+1
 
        enddo
 
@@ -246,12 +219,13 @@ contains
        isec = 1
 
        do vid = 1,nvars
-          if( is_sector(vid) ) then
+          if( vndims(vid) == 3 ) then
              ierr = pio_inq_varname(ncid, vid, emissions(m)%sectors(isec))
              isec = isec+1
           endif
+
        enddo
-       deallocate(is_sector)
+       deallocate(vndims)
 
        ! Global attribute 'input_method' overrides the srf_emis_type namelist setting on
        ! a file-by-file basis.  If the emis file does not contain the 'input_method' 

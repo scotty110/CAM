@@ -3,7 +3,6 @@ module orbit
 contains
 
 subroutine zenith(calday  ,clat    , clon   ,coszrs  ,ncol, dt_avg, uniform_angle    )
-
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -32,7 +31,6 @@ subroutine zenith(calday  ,clat    , clon   ,coszrs  ,ncol, dt_avg, uniform_angl
    real(r8), intent(in) :: clon(ncol)          ! Centered longitude (radians)
    real(r8), intent(in), optional :: dt_avg    ! if present, time step to use for the shr_orb_cosz calculation
    real(r8), intent(in), optional :: uniform_angle    ! if present, then call coszrs with a uniform angle
-
 !
 ! Output arguments
 !
@@ -51,14 +49,13 @@ subroutine zenith(calday  ,clat    , clon   ,coszrs  ,ncol, dt_avg, uniform_angl
 !
 ! Compute local cosine solar zenith angle,
 !
-
    if (present(uniform_angle)) then
       do i=1,ncol
          coszrs(i) = shr_orb_cosz( calday, clat(i), clon(i), delta, dt_avg, uniform_angle=uniform_angle )
       end do
    else
       do i=1,ncol
-         coszrs(i) = shr_orb_cosz( calday, clat(i), clon(i), delta, dt_avg )
+         coszrs(i) = shr_orb_cosz( calday, clat(i), clon(i), delta, dt_avg)
       end do
    end if
 end subroutine zenith

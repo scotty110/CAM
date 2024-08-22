@@ -1,5 +1,5 @@
 !-----------------------------------------------------------------------
-! $Id$
+! $Id: mono_flux_limiter.F90 7315 2014-09-30 20:49:54Z schemena@uwm.edu $
 !===============================================================================
 module mono_flux_limiter
 
@@ -20,9 +20,7 @@ module mono_flux_limiter
   ! and xm_wpxp_rtm given in advance_xm_wpxp_module!
   integer, parameter, private :: &
     mono_flux_thlm = 1, & ! Named constant for thlm mono_flux calls
-    mono_flux_rtm = 2,  & ! Named constant for rtm mono_flux calls
-    mono_flux_um = 4,   & ! Named constant for um mono_flux calls
-    mono_flux_vm = 5      ! Named constant for vm mono_flux calls
+    mono_flux_rtm = 2     ! Named constant for rtm mono_flux calls
 
   contains
 
@@ -33,8 +31,7 @@ module mono_flux_limiter
                                              invrs_rho_ds_zm, invrs_rho_ds_zt, &
                                              xp2_threshold, l_implemented, &
                                              low_lev_effect, high_lev_effect, &
-                                             l_upwind_xm_ma, &
-                                             xm, xm_tol, wpxp )
+                                             xm, xm_tol, wpxp, err_code )
 
     ! Description:
     ! Limits the value of w'x' and corrects the value of xm when the xm turbulent
@@ -291,13 +288,12 @@ module mono_flux_limiter
         eps, &
         fstderr
 
-    use error_code, only: &
-        clubb_at_least_debug_level,  & ! Procedure
-        err_code,                    & ! Error Indicator
-        clubb_fatal_error              ! Constant
-
     use clubb_precision, only:  & 
         core_rknd ! Variable(s)
+
+    use error_code, only:  &
+        fatal_error, &  ! Procedure(s)
+        clubb_no_error   ! Constant
         
     use fill_holes, only: &
         vertical_integral ! Procedure(s)
@@ -308,16 +304,12 @@ module mono_flux_limiter
         stat_update_var
 
     use stats_variables, only:  &
-        stats_zm, & ! Variable(s)
-        stats_zt, &
-        iwprtp_mfl, &
-        irtm_mfl, &
-        iwpthlp_mfl, &
-        ithlm_mfl, &
-        iupwp_mfl, &
-        ium_mfl, &
-        ivpwp_mfl, &
-        ivm_mfl, &
+        stats_zm,  & ! Variable(s)
+        stats_zt,  &
+        iwprtp_mfl,  &
+        irtm_mfl,  &
+        iwpthlp_mfl,  &
+        ithlm_mfl,  &
         ithlm_old, &
         ithlm_without_ta, &
         ithlm_mfl_min, &
@@ -376,15 +368,14 @@ module mono_flux_limiter
       low_lev_effect, & ! Index of lowest level that has an effect (for lev. k)
       high_lev_effect   ! Index of highest level that has an effect (for lev. k)
 
-    logical, intent(in) :: &
-      l_upwind_xm_ma ! This flag determines whether we want to use an upwind differencing
-                     ! approximation rather than a centered differencing for turbulent or
-                     ! mean advection terms. It affects rtm, thlm, sclrm, um and vm.
-
     ! Input/Output Variables
     real( kind = core_rknd ), dimension(gr%nz), intent(inout) ::  &
       xm,  &      ! xm at current time step (thermodynamic levels)  [units vary]
       wpxp        ! w'x' (momentum levels)                          [units vary]
+
+    ! Output Variable
+    integer, intent(out) ::  &
+      err_code  ! Returns an error code in the event of a singular matrix
 
     ! Local Variables
     real( kind = core_rknd ), dimension(gr%nz) :: &
@@ -434,6 +425,7 @@ module mono_flux_limiter
       ixm_mfl
 
     !--- Begin Code ---
+    err_code = clubb_no_error  ! Initialize to the value for no errors
 
     ! Default Initialization required due to G95 compiler warning
     max_xp2 = 0.0_core_rknd
@@ -448,14 +440,6 @@ module mono_flux_limiter
        iwpxp_mfl = iwpthlp_mfl
        ixm_mfl   = ithlm_mfl
        max_xp2   = 5.0_core_rknd
-    case ( mono_flux_um )  ! um/upwp
-       iwpxp_mfl = iupwp_mfl
-       ixm_mfl   = ium_mfl
-       max_xp2   = 10.0_core_rknd
-    case ( mono_flux_vm )  ! vm/vpwp
-       iwpxp_mfl = ivpwp_mfl
-       ixm_mfl   = ivm_mfl
-       max_xp2   = 10.0_core_rknd
     case default    ! passive scalars are involved
        iwpxp_mfl = 0
        ixm_mfl   = 0
@@ -537,19 +521,10 @@ module mono_flux_limiter
                           + dt*m_adv_term
 
        ! Find the minimum usuable value of variable x at each vertical level.
-       if ( solve_type /= mono_flux_um .and. solve_type /= mono_flux_vm ) then
-
-          ! Since variable x must be one of theta_l, r_t, or a scalar, all of
-          ! which are positive definite quantities, the value must be >= 0.
-          min_x_allowable_lev(k) &
-          = max( xm_without_ta(k) - max_dev, zero_threshold )
-
-       else ! solve_type == mono_flux_um .or. solve_type == mono_flux_vm
-
-          ! Variable x must be one of u or v.
-          min_x_allowable_lev(k) = xm_without_ta(k) - max_dev
-
-       endif ! solve_type /= mono_flux_um .and. solve_type /= mono_flux_vm
+       ! Since variable x must be one of theta_l, r_t, or a scalar, all of
+       ! which are positive definite quantities, the value must be >= 0.
+       min_x_allowable_lev(k)  &
+       = max( xm_without_ta(k) - max_dev, zero_threshold )
 
        ! Find the maximum usuable value of variable x at each vertical level.
        max_x_allowable_lev(k) = xm_without_ta(k) + max_dev
@@ -716,7 +691,7 @@ module mono_flux_limiter
     endif
 
 
-    if ( any( abs(wpxp_net_adjust(:)) > eps ) ) then
+    if ( any( wpxp_net_adjust(:) /= 0.0_core_rknd ) ) then
 
        ! Reset the value of xm to compensate for the change to w'x'.
 
@@ -726,7 +701,7 @@ module mono_flux_limiter
           ! values of xm at timestep index (t+1).
 
           ! Set up the left-hand side of the tridiagonal matrix equation.
-          call mfl_xm_lhs( dt, wm_zt, l_implemented, l_upwind_xm_ma, &
+          call mfl_xm_lhs( dt, wm_zt, l_implemented, &
                            lhs_mfl_xm )
 
           ! Set up the right-hand side of tridiagonal matrix equation.
@@ -736,12 +711,10 @@ module mono_flux_limiter
 
           ! Solve the tridiagonal matrix equation.
           call mfl_xm_solve( solve_type, lhs_mfl_xm, rhs_mfl_xm,  &
-                             xm )
+                             xm, err_code )
 
           ! Check for errors
-          if ( clubb_at_least_debug_level( 0 ) ) then
-              if ( err_code == clubb_fatal_error ) return
-          end if
+          if ( fatal_error( err_code ) ) return
 
        else  ! l_mfl_xm_imp_adj = .false.
 
@@ -790,7 +763,7 @@ module mono_flux_limiter
           xm_vert_integral &
           = vertical_integral  &
               ( ((gr%nz - 1) - 2 + 1), rho_ds_zt(2:gr%nz - 1), &
-                xm(2:gr%nz - 1), gr%dzt(2:gr%nz - 1) )
+                xm(2:gr%nz - 1), gr%invrs_dzt(2:gr%nz - 1) )
 
           !Check to ensure the vertical integral is not zero to avoid a divide
           !by zero error
@@ -859,7 +832,7 @@ module mono_flux_limiter
   end subroutine monotonic_turbulent_flux_limit
 
   !=============================================================================
-  subroutine mfl_xm_lhs( dt, wm_zt, l_implemented, l_upwind_xm_ma, &
+  subroutine mfl_xm_lhs( dt, wm_zt, l_implemented, &
                          lhs )
 
     ! Description:
@@ -900,11 +873,6 @@ module mono_flux_limiter
     logical, intent(in) :: &
       l_implemented   ! Flag for CLUBB being implemented in a larger model.
 
-    logical, intent(in) :: &
-      l_upwind_xm_ma ! This flag determines whether we want to use an upwind differencing
-                     ! approximation rather than a centered differencing for turbulent or
-                     ! mean advection terms. It affects rtm, thlm, sclrm, um and vm.
-
     ! Output Variables
     real( kind = core_rknd ), dimension(3,gr%nz), intent(out) ::  & 
       lhs    ! Left hand side of tridiagonal matrix
@@ -933,8 +901,7 @@ module mono_flux_limiter
 
           lhs(kp1_tdiag:km1_tdiag,k) & 
           = lhs(kp1_tdiag:km1_tdiag,k) &
-          + term_ma_zt_lhs( wm_zt(k), gr%invrs_dzt(k), k, gr%invrs_dzm(k), gr%invrs_dzm(km1), &
-                            l_upwind_xm_ma )
+          + term_ma_zt_lhs( wm_zt(k), gr%invrs_dzt(k), k, gr%invrs_dzm(k), gr%invrs_dzm(km1) )
 
        else
 
@@ -1057,7 +1024,7 @@ module mono_flux_limiter
 
   !=============================================================================
   subroutine mfl_xm_solve( solve_type, lhs, rhs,  &
-                           xm )
+                           xm, err_code )
 
     ! Description:
     ! This subroutine is part of the process of re-solving for xm at timestep
@@ -1077,13 +1044,12 @@ module mono_flux_limiter
     use lapack_wrap, only:  & 
         tridag_solve  ! Procedure(s)
 
+    use error_code, only:  &
+        fatal_error, &  ! Procedure(s)
+        clubb_no_error   ! Constant
+
     use clubb_precision, only: &
         core_rknd
-
-    use error_code, only: &
-        clubb_at_least_debug_level,  & ! Procedure
-        err_code,                    & ! Error Indicator
-        clubb_fatal_error              ! Constant
 
     implicit none
 
@@ -1107,11 +1073,16 @@ module mono_flux_limiter
     real( kind = core_rknd ), dimension(gr%nz), intent(inout) :: &
       xm   ! Value of variable being solved for at timestep (t+1)   [units vary]
 
+    integer, intent(out) ::  &
+      err_code  ! Returns an error code in the event of a singular matrix
+
     ! Local variable
     character(len=10) :: &
       solve_type_str ! solve_type as a string for debug output purposes
 
     !-----------------------------------------------------------------------
+
+    err_code = clubb_no_error  ! Initialize to the value for no errors
 
     select case( solve_type )
     case ( mono_flux_rtm )
@@ -1125,13 +1096,11 @@ module mono_flux_limiter
     ! Solve for xm at timestep index (t+1) using the tridiagonal solver.
     call tridag_solve & 
          ( solve_type_str, gr%nz, 1, lhs(kp1_tdiag,:),  &  ! Intent(in)
-           lhs(k_tdiag,:), lhs(km1_tdiag,:), rhs,  &       ! Intent(inout)
-           xm )                                            ! Intent(out)
+           lhs(k_tdiag,:), lhs(km1_tdiag,:), rhs,  &         ! Intent(inout)
+           xm, err_code )                                    ! Intent(out)
 
     ! Check for errors
-    if ( clubb_at_least_debug_level( 0 ) ) then
-        if ( err_code == clubb_fatal_error ) return
-    end if
+    if ( fatal_error( err_code ) ) return
 
     ! Boundary condition on xm
     xm(1) = xm(2)
@@ -1206,14 +1175,12 @@ module mono_flux_limiter
 
     ! Local Variables
     real( kind = core_rknd ), dimension(gr%nz) ::  &
-      vert_vel_up,   & ! Average upwards vertical velocity component   [m/s]
-      vert_vel_down, & ! Average downwards vertical velocity component [m/s]
-      w_min            ! Minimum velocity to affect adjacent levels    [m/s]
+      vert_vel_up,  & ! Average upwards vertical velocity component   [m/s]
+      vert_vel_down   ! Average downwards vertical velocity component [m/s]
 
     real(kind = core_rknd ) ::  &
-      dt_one_grid_lev,  & ! Amount of time to travel one grid box           [s]
-      dt_all_grid_levs, & ! Running count of amount of time taken to travel [s]
-      invrs_dt            ! Inverse of timestep, used to reduce divides     [1/s]
+      dt_one_grid_lev, & ! Amount of time to travel one grid box           [s]
+      dt_all_grid_levs   ! Running count of amount of time taken to travel [s]
 
     integer :: k, j
 
@@ -1314,15 +1281,12 @@ module mono_flux_limiter
 
     else ! thickness based on vertical velocity and time step length.
 
-       invrs_dt = 1.0_core_rknd / dt
-       w_min = gr%dzm * invrs_dt
-
        ! Find the average upwards vertical velocity and the average downwards
        ! vertical velocity.
        ! Note:  A level that has all vertical wind moving downwards will have a
        !        vert_vel_up value that is 0, and vice versa.
        call mean_vert_vel_up_down( w_1_zm, w_2_zm, varnce_w_1_zm, varnce_w_2_zm, & !  In
-                                   mixt_frac_zm, 0.0_core_rknd, w_min, & ! In
+                                   mixt_frac_zm, 0.0_core_rknd,  & ! In
                                    vert_vel_down, vert_vel_up )
 
        ! The value of w'x' may only be altered between levels 3 and gr%nz-2.
@@ -1346,7 +1310,7 @@ module mono_flux_limiter
 
                 ! Compute the amount of time it takes to travel one grid level
                 ! upwards:  delta_t = delta_z / vert_vel_up.
-                dt_one_grid_lev =  gr%dzm(j) / vert_vel_up(j)
+                dt_one_grid_lev =  (1.0_core_rknd/gr%invrs_dzm(j)) / vert_vel_up(j)
                                        
 
                 ! Total time elapsed for crossing all grid levels that have been
@@ -1424,7 +1388,7 @@ module mono_flux_limiter
                 !        distance traveled is downwards.  Since vert_vel_down
                 !        has a negative value, dt_one_grid_lev will be a
                 !        positive value.
-                dt_one_grid_lev = -gr%dzm(j-1) / vert_vel_down(j-1)
+                dt_one_grid_lev = -(1.0_core_rknd/gr%invrs_dzm(j-1)) / vert_vel_down(j-1)
 
                 ! Total time elapsed for crossing all grid levels that have been
                 ! passed, thus far.
@@ -1499,7 +1463,7 @@ module mono_flux_limiter
 
   !=============================================================================
   subroutine mean_vert_vel_up_down( w_1_zm, w_2_zm, varnce_w_1_zm, varnce_w_2_zm, &
-                                    mixt_frac_zm, w_ref, w_min, &
+                                    mixt_frac_zm, w_ref, &
                                     mean_w_down, mean_w_up )
 
     ! Description
@@ -1668,7 +1632,7 @@ module mono_flux_limiter
     !       INT(-inf:w|_ref) wi P(wi) dwi = 0; and
     !       INT(inf:w|_ref) wi P(wi) dwi = mu_wi.
     !
-    ! Notes: A value of 3 standard deviations above and below the mean of the
+    ! Note:  A value of 3 standard deviations above and below the mean of the
     !        ith normal distribution was chosen for the approximate maximum and
     !        minimum values of the ith normal distribution because 99.7% of
     !        values in a normal distribution are found within 3 standard
@@ -1676,27 +1640,24 @@ module mono_flux_limiter
     !        deviations).  The value of 3 standard deviations provides for a
     !        reasonable estimate of the absolute maximum and minimum of w, while
     !        covering a great majority of the normal distribution.
-    !
-    !        In addition to approximating the up and down components of w
-    !        by checking if the pdfs are greater than 3 standard deviations
-    !        from the mean, there is now a case to approximate when w is
-    !        too small in general. The input array, w_min, contains the
-    !        minimum values of vertical velocity that would be required
-    !        at a given grid level for that grid box to be able to affect
-    !        the adjacent levels. If the magnitude of w at a given level
-    !        is less than 3 standard deviations below w_min for that level,
-    !        then there is no significant portion of the air from that grid
-    !        box that is capable of interacting with the next level, and
-    !        the upward and downward components for that pdf are set to 0.
-    !
+
     ! References:
     !-----------------------------------------------------------------------
 
     use grid_class, only:  &
-        gr   ! Variable(s)
+        gr,  & ! Variable(s)
+        zt2zm  ! Procedure(s)
+
+    use constants_clubb, only: &
+        sqrt_2pi, &
+        sqrt_2
+
+    use anl_erf, only:  & 
+        erf ! Procedure(s)
+            ! The error function
 
     use stats_type_utilities, only:  &
-        stat_update_var  ! Procedure(s)
+        stat_update_var_pt  ! Procedure(s)
 
     use stats_variables, only:  &
         stats_zm,  & ! Variable(s)
@@ -1715,8 +1676,7 @@ module mono_flux_limiter
       w_2_zm,        & ! Mean w (2nd PDF component)                   [m/s]
       varnce_w_1_zm, & ! Variance of w (1st PDF component)            [m^2/s^2]
       varnce_w_2_zm, & ! Variance of w (2nd PDF component)            [m^2/s^2]
-      mixt_frac_zm,  & ! Weight of 1st PDF component (Sk_w dependent) [-]
-      w_min            ! Minimum velocity to affect adjacent level    [m/s]
+      mixt_frac_zm    ! Weight of 1st PDF component (Sk_w dependent) [-]
 
     real( kind = core_rknd ), intent(in) ::  &
       w_ref          ! Reference velocity, w|_ref (normally = 0)   [m/s]
@@ -1727,240 +1687,146 @@ module mono_flux_limiter
       mean_w_up      ! Overall mean w (>= w|_ref)                  [m/s]
 
     ! Local Variables
-    real( kind = core_rknd ), dimension(gr%nz) :: &
+
+    real( kind = core_rknd ) :: &
+      sigma_w_1, & ! Standard deviation of w for 1st normal distribution    [m/s]
+      sigma_w_2, & ! Standard deviation of w for 2nd normal distribution    [m/s]
       mean_w_down_1st, & ! Mean w (<= w|_ref) from 1st normal distribution [m/s]
       mean_w_down_2nd, & ! Mean w (<= w|_ref) from 2nd normal distribution [m/s]
       mean_w_up_1st, &   ! Mean w (>= w|_ref) from 1st normal distribution [m/s]
-      mean_w_up_2nd      ! Mean w (>= w|_ref) from 2nd normal distribution [m/s]
+      mean_w_up_2nd, &   ! Mean w (>= w|_ref) from 2nd normal distribution [m/s]
+      exp_cache, & ! Cache of exponential calculations to reduce runtime
+      erf_cache    ! Cache of error function calculations to reduce runtime
+
+    integer :: k  ! Vertical loop index
 
     ! ---- Begin Code ----
 
-    call calc_mean_w_up_down_component( w_1_zm, varnce_w_1_zm, &
-                                        w_ref, w_min, &
-                                        mean_w_down_1st, mean_w_up_1st )
-
-    call calc_mean_w_up_down_component( w_2_zm, varnce_w_2_zm, &
-                                        w_ref, w_min, &
-                                        mean_w_down_2nd, mean_w_up_2nd )
-
-    ! Overall mean of downwards w.
-    mean_w_down = mixt_frac_zm * mean_w_down_1st &
-                     + ( 1.0_core_rknd - mixt_frac_zm ) * mean_w_down_2nd
-
-    ! Overall mean of upwards w.
-    mean_w_up = mixt_frac_zm * mean_w_up_1st  &
-                   + ( 1.0_core_rknd - mixt_frac_zm ) * mean_w_up_2nd
-
-    if ( l_stats_samp ) then
-
-       call stat_update_var( imean_w_up, mean_w_up, stats_zm )
-
-       call stat_update_var( imean_w_down, mean_w_down, stats_zm )
-
-    endif ! l_stats_samp
-
-    return
-
-  end subroutine mean_vert_vel_up_down
-
-  !=============================================================================
-  subroutine calc_mean_w_up_down_component( w_i_zm, varnce_w_i, &
-                                            w_ref, w_min, &
-                                            mean_w_down_i, mean_w_up_i )
-
-    ! Description: This procedure is used to split the PDF component of
-    !              vertical velocity into upward and downward components.
-    !
-    !              The method used is described in the description of
-    !              mean_vert_vel_up_down, which calls this function.
-    !
-    ! Notes: The calculation has been updated to optionally use intel's
-    !        mkl_vml functions to allow vectorized calculations. Not all
-    !        grid levels require expensive calculations though, so the
-    !        strategy is as follows
-    !           1. Keep track of which levels do need the calculation
-    !           2. Store those the relavent values from those levels in
-    !              a contigous array
-    !           3. Perform vectorized calculation on contiguous arrays
-    !              using mkl_vml functions
-    !           4. Unpack results from contiguous array into output array
-    !        Enabling this faster version requires compilation with MKL, by
-    !        using -DMKL as a compiler flag
-    !
-    !-----------------------------------------------------------------------
-
-      use grid_class, only:  &
-          gr  ! Variable(s)
-
-      use constants_clubb, only: &
-          sqrt_2pi, &  ! Constant(s)
-          sqrt_2, &
-          one, &
-          one_half
-
-      use clubb_precision, only: &
-        core_rknd ! Variable(s)
-
-      implicit none
-
-      ! Input Variables
-      real( kind = core_rknd ), dimension(gr%nz), intent(in) ::  &
-        w_i_zm,     & ! Mean of w                                   [m/s]
-        varnce_w_i, & ! Variance of w                                       [m^2/s^2]
-        w_min         ! Minimum velocity required to affect adjacent level  [m/s]
-
-      real( kind = core_rknd ), intent(in) ::  &
-        w_ref         ! Reference velocity, w|_ref (normally = 0)   [m/s]
-
-      ! Output Variables
-      real( kind = core_rknd ), dimension(gr%nz), intent(out) ::  &
-        mean_w_down_i, & ! Mean w (<= w|_ref) from normal distribution [m/s]
-        mean_w_up_i      ! Mean w (>= w|_ref) from normal distribution [m/s]
-
-      ! Local Variables
-      real( kind = core_rknd ), dimension(gr%nz) :: &
-          sigma_w_i, & ! Variance of w (1st PDF component)            [m^2/s^2]
-          erf_cache, & ! erf/cdfnorm values
-          exp_cache    ! exp() values
-
-#ifdef MKL
-      real( kind = core_rknd ), dimension(gr%nz) :: &
-          w_zm_packed,          & ! Values of w needed in expensive calculation      [m/s]
-          sigma_w_packed,       & ! Values of sigma needed in expensive calculation  [m/s]
-          mean_w_down_packed,   & ! Mean w (<= w|_ref), only calculated values       [m/s]
-          mean_w_up_packed,     & ! Mean w (>= w|_ref), only calculated values       [m/s]
-          zeta, zeta_sqd
-
-      integer, dimension(gr%nz) :: &
-         v_calc_mask    ! Mask to indicate which indicies need vectorizable calculations
-
-      integer :: &
-         v_num_calcs   ! Number of elements needing calculation, can act as an index variable
-#endif
-
-      real( kind = core_rknd ) :: &
-        invrs_sqrt_2pi ! The inverse of sqrt(2*pi), calculated to save divide operations
-
-      integer :: k  ! Vertical loop index
-
-    ! ----------------- Begin Code -----------------
-
-    invrs_sqrt_2pi = one / sqrt_2pi
-
-#ifdef MKL
-    v_calc_mask(:) = 0
-    v_num_calcs = 0
-#endif
-
     ! Loop over momentum levels from 2 to gr%nz-1.  Levels 1 and gr%nz
     ! are not needed.
-    do k = 2, gr%nz-1
+    do k = 2, gr%nz-1, 1
 
-        ! Standard deviation of w for the normal distribution.
-        sigma_w_i(k) = sqrt( varnce_w_i(k) )
+       ! Standard deviation of w for the 1st normal distribution.
+       sigma_w_1 = sqrt( varnce_w_1_zm(k) )
 
-        if( abs( w_i_zm(k) ) + 3.0_core_rknd*sigma_w_i(k) <= w_min(k) ) then
-
-            ! The entire normal is too weak to affect adjacent grid levels
-            ! w is considered to be 0 in both up and down directions
-            mean_w_down_i(k) = 0.0_core_rknd
-            mean_w_up_i(k)   = 0.0_core_rknd
-
-        elseif ( w_i_zm(k) + 3._core_rknd*sigma_w_i(k) <= w_ref ) then
-
-           ! The entire normal is on the negative side of w|_ref.
-           mean_w_down_i(k) = w_i_zm(k)
-           mean_w_up_i(k)   = 0.0_core_rknd
-
-        elseif ( w_i_zm(k) - 3._core_rknd*sigma_w_i(k) >= w_ref ) then
-
-           ! The entire normal is on the positive side of w|_ref.
-           mean_w_down_i(k) = 0.0_core_rknd
-           mean_w_up_i(k)   = w_i_zm(k)
-
-        else ! The normal has significant values on both sides of w_ref.
-
-#ifdef MKL
-           ! MKL functions are available, the calculations will be completed
-           ! over contiguous array sections, simply save needed values here
-
-           ! Increment count of elements needing calculation
-           v_num_calcs = v_num_calcs + 1
-
-           ! Copy values which are needed in calculation into contiguous array section
-           w_zm_packed(v_num_calcs) = w_i_zm(k)
-           sigma_w_packed(v_num_calcs) = sigma_w_i(k)
-
-           ! Keep track of where result goes using this mask, so we can unpack
-           ! the contiguous array back into the output array after calculation
-           v_calc_mask(k) = 1
-#else
-           ! MKL functions are unavailable, use these scalar calculations instead
-
-           exp_cache(k) = exp( -(w_ref-w_i_zm(k))**2 / (2.0_core_rknd*sigma_w_i(k)**2) )
-
-           erf_cache(k) = erf( (w_ref-w_i_zm(k)) / (sqrt_2*sigma_w_i(k)) )
-
-           mean_w_down_i(k) =  - sigma_w_i(k) * invrs_sqrt_2pi * exp_cache(k)  &
-                               + w_i_zm(k) * 0.5_core_rknd*( 1.0_core_rknd + erf_cache(k))
-
-           mean_w_up_i(k) =  + sigma_w_i(k) * invrs_sqrt_2pi * exp_cache(k)  &
-                             + w_i_zm(k) * 0.5_core_rknd*( 1.0_core_rknd - erf_cache(k))
-#endif
-
-        endif
-
-    enddo ! k = 2, gr%nz
+       ! Standard deviation of w for the 2nd normal distribution.
+       sigma_w_2 = sqrt( varnce_w_2_zm(k) )
 
 
-#ifdef MKL
-    ! If there are any calculations to complete, then v_num_calcs > 0, and the values to 
-    ! operate on are all stored in contiguous sections in the "packed" arrays. This means the 
-    ! packed arrays are only valid on (1:v_num_calcs), and values outside that range may 
-    ! be NaN. For more information on Intel's MKL_VML functions, see the Vector Mathematical
-    ! Functions section of the MKL developer reference for Fortran
-    if( v_num_calcs > 0 ) then
+       ! Contributions from the 1st normal distribution.
+       if ( w_1_zm(k) + 3._core_rknd*sigma_w_1 <= w_ref ) then
 
-        ! zeta = w_zm_packed / sigma_w_packed
-        call vddiv( v_num_calcs, ( w_ref - w_zm_packed(1:v_num_calcs) ), sigma_w_packed, zeta )
+          ! The entire 1st normal is on the negative side of w|_ref.
+          mean_w_down_1st = w_1_zm(k)
+          mean_w_up_1st   = 0.0_core_rknd
 
-        ! Cumulative normal distribution function, erf_cache = 0.5*(1+erf(zeta/sqrt2))
-        call vdcdfnorm( v_num_calcs, zeta, erf_cache )
+       elseif ( w_1_zm(k) - 3._core_rknd*sigma_w_1 >= w_ref ) then
 
-        ! zeta_sqd = zeta**2
-        call vdsqr( v_num_calcs, zeta, zeta_sqd )
+          ! The entire 1st normal is on the positive side of w|_ref.
+          mean_w_down_1st = 0.0_core_rknd
+          mean_w_up_1st   = w_1_zm(k)
 
-        ! exp_cache = exp( -0.5*zeta**2 )
-        call vdexp( v_num_calcs, - one_half * zeta_sqd(1:v_num_calcs), exp_cache )
+       else
 
-        do k = 1, v_num_calcs
+          ! The exponential calculation is pulled out as it is reused in both
+          ! equations. This should save one calculation of the
+          ! exp( -(w_ref-w_1_zm(k))**2 ... etc. part of the formula.
+          ! ~~EIHoppe//20090618
+          exp_cache = exp( -(w_ref-w_1_zm(k))**2 / (2.0_core_rknd*sigma_w_1**2) ) 
 
-            mean_w_down_packed(k) = - sigma_w_packed(k) * invrs_sqrt_2pi * exp_cache(k) &
-                                    + w_zm_packed(k) * erf_cache(k)
+          ! Added cache of the error function calculations.
+          ! This should save one calculation of the erf(...) part
+          ! of the formula.
+          ! ~~EIHoppe//20090623
+          erf_cache = erf( (w_ref-w_1_zm(k)) / (sqrt_2*sigma_w_1) )
 
-            mean_w_up_packed(k) = + sigma_w_packed(k) * invrs_sqrt_2pi * exp_cache(k) &
-                                  + w_zm_packed(k) * ( one - erf_cache(k) )
-        end do
+          ! The 1st normal has values on both sides of w_ref.
+          mean_w_down_1st =  &
+             - (sigma_w_1/sqrt_2pi)  &
+!             * exp( -(w_ref-w_1_zm(k))**2 / (2.0_core_rknd*sigma_w_1**2) )  &
+             * exp_cache  &
+!          + w_1(k) * 0.5_core_rknd*( 1.0_core_rknd + erf( (w_ref-w_1(k)) / (sqrt_2*sigma_w_1) ) )
+             + w_1_zm(k) * 0.5_core_rknd*( 1.0_core_rknd + erf_cache)
 
-        ! Unpack results from contiguous array sections and put them into output arrays,
-        ! where to put them is defined by v_calc_mask
-        call vdunpackm( gr%nz, mean_w_down_packed, mean_w_down_i, v_calc_mask )
-        call vdunpackm( gr%nz, mean_w_up_packed, mean_w_up_i, v_calc_mask )
+          mean_w_up_1st =  &
+             + (sigma_w_1/sqrt_2pi)  &
+!             * exp( -(w_ref-w_1(k))**2 / (2.0_core_rknd*sigma_w_1**2) )  &
+             * exp_cache  &
+!          + w_1(k) * 0.5_core_rknd*( 1.0_core_rknd - erf( (w_ref-w_1(k)) / (sqrt_2*sigma_w_1) ) )
+             + w_1_zm(k) * 0.5_core_rknd*( 1.0_core_rknd - erf_cache)
 
-    end if
+          ! /EIHoppe changes
 
-#endif
+       endif
 
-    ! Upper and lower levels are not used, set to 0 to be safe and avoid NaN problems
-    mean_w_down_i(1) = 0.0_core_rknd
-    mean_w_up_i(1) = 0.0_core_rknd
 
-    mean_w_down_i(gr%nz) = 0.0_core_rknd
-    mean_w_up_i(gr%nz) = 0.0_core_rknd
+       ! Contributions from the 2nd normal distribution.
+       if ( w_2_zm(k) + 3._core_rknd*sigma_w_2 <= w_ref ) then
+
+          ! The entire 2nd normal is on the negative side of w|_ref.
+          mean_w_down_2nd = w_2_zm(k)
+          mean_w_up_2nd   = 0.0_core_rknd
+
+       elseif ( w_2_zm(k) - 3._core_rknd*sigma_w_2 >= w_ref ) then
+
+          ! The entire 2nd normal is on the positive side of w|_ref.
+          mean_w_down_2nd = 0.0_core_rknd
+          mean_w_up_2nd   = w_2_zm(k)
+
+       else
+
+          ! The exponential calculation is pulled out as it is reused in both
+          ! equations. This should save one calculation of the
+          ! exp( -(w_ref-w_1(k))**2 ... etc. part of the formula.
+          ! ~~EIHoppe//20090618
+          exp_cache = exp( -(w_ref-w_2_zm(k))**2 / (2.0_core_rknd*sigma_w_2**2) ) 
+
+          ! Added cache of the error function calculations.
+          ! This should save one calculation of the erf(...) part
+          ! of the formula.
+          ! ~~EIHoppe//20090623
+          erf_cache = erf( (w_ref-w_2_zm(k)) / (sqrt_2*sigma_w_2) )
+
+          ! The 2nd normal has values on both sides of w_ref.
+          mean_w_down_2nd =  &
+             - (sigma_w_2/sqrt_2pi)  &
+!            * exp( -(w_ref-w_2_zm(k))**2 / (2.0_core_rknd*sigma_w_2**2) )  &
+             * exp_cache  &
+!       + w_2_zm(k) * 0.5_core_rknd*( 1.0_core_rknd + erf( (w_ref-w_2(k)) / (sqrt_2*sigma_w_2) ) )
+             + w_2_zm(k) * 0.5_core_rknd*( 1.0_core_rknd + erf_cache)
+
+          mean_w_up_2nd =  &
+             + (sigma_w_2/sqrt_2pi)  &
+!            * exp( -(w_ref-w_2(k))**2 / (2.0_core_rknd*sigma_w_2**2) )  &
+             * exp_cache  &
+!          + w_2(k) * 0.5_core_rknd*( 1.0_core_rknd - erf( (w_ref-w_2(k)) / (sqrt_2*sigma_w_2) ) )
+             + w_2_zm(k) * 0.5_core_rknd*( 1.0_core_rknd - erf_cache)
+
+          ! /EIHoppe changes
+
+       endif
+
+       ! Overall mean of downwards w.
+       mean_w_down(k) = mixt_frac_zm(k) * mean_w_down_1st  &
+                        + ( 1.0_core_rknd - mixt_frac_zm(k) ) * mean_w_down_2nd
+
+       ! Overall mean of upwards w.
+       mean_w_up(k) = mixt_frac_zm(k) * mean_w_up_1st  &
+                      + ( 1.0_core_rknd - mixt_frac_zm(k) ) * mean_w_up_2nd
+
+       if ( l_stats_samp ) then
+
+          call stat_update_var_pt( imean_w_up, k, mean_w_up(k), stats_zm )
+
+          call stat_update_var_pt( imean_w_down, k, mean_w_down(k), stats_zm )
+
+       endif ! l_stats_samp
+
+    enddo ! k = 2, gr%nz, 1
+
 
     return
-
-  end subroutine calc_mean_w_up_down_component
+  end subroutine mean_vert_vel_up_down
 
 !===============================================================================
 

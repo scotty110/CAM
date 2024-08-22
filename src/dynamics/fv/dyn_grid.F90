@@ -1113,13 +1113,8 @@ subroutine define_cam_grids()
     ind = ind + 1
     grid_map(1, ind) = 1
     grid_map(2, ind) = i
-    if (beglonxy == 1) then
-      grid_map(3, ind) = 1
-      grid_map(4, ind) = i
-    else
-      grid_map(3, ind) = 0
-      grid_map(4, ind) = 0
-    end if
+    grid_map(3, ind) = 1
+    grid_map(4, ind) = i
   end do
   ! We need a special, size-one "longigude" coordinate
   ! NB: This is never a distributed coordinate so calc even on inactive PEs

@@ -40,9 +40,8 @@ module iondrag
   use interpolate_data, only: lininterp
   use spmd_utils,       only: masterproc
 
-  use phys_control,  only: waccmx_is
+  use phys_control, only: waccmx_is
   use cam_abortutils,only: endrun
-  use time_manager,  only: is_first_step
 
   implicit none
 
@@ -73,7 +72,7 @@ module iondrag
   ! Namelist variables
   character(len=256) :: efield_lflux_file = 'coeff_lflux.dat'
   character(len=256) :: efield_hflux_file = 'coeff_hflux.dat'
-  real(r8)           :: efield_potential_max = huge(1._r8) ! max cross cap potential kV
+  character(len=256) :: efield_wei96_file = 'wei96.cofcnts'
   logical            :: empirical_ion_velocities = .true.
 
   real(r8),parameter :: amu    = 1.6605387e-27_r8  ! atomic mass unit (kg)
@@ -220,7 +219,7 @@ contains
 
     use namelist_utils,  only: find_group_name
     use units,           only: getunit, freeunit
-    use spmd_utils, only: mpicom, masterprocid, mpicom, mpi_character, mpi_logical, mpi_real8
+    use spmd_utils, only: mpicom, masterprocid, mpicom, mpi_character, mpi_logical
 
     character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input
 
@@ -228,7 +227,7 @@ contains
     integer :: unitn, ierr
     character(len=*), parameter :: subname = 'iondrag_readnl'
 
-    namelist /iondrag_nl/ efield_lflux_file, efield_hflux_file, efield_potential_max, empirical_ion_velocities
+    namelist /iondrag_nl/ efield_lflux_file, efield_hflux_file, efield_wei96_file, empirical_ion_velocities
 
     if (masterproc) then
        unitn = getunit()
@@ -247,16 +246,8 @@ contains
 
     call mpi_bcast (efield_lflux_file, len(efield_lflux_file), mpi_character, masterprocid, mpicom, ierr)
     call mpi_bcast (efield_hflux_file, len(efield_hflux_file), mpi_character, masterprocid, mpicom, ierr)
-    call mpi_bcast (efield_potential_max, 1, mpi_real8, masterprocid, mpicom, ierr)
+    call mpi_bcast (efield_wei96_file, len(efield_wei96_file), mpi_character, masterprocid, mpicom, ierr)
     call mpi_bcast (empirical_ion_velocities, 1, mpi_logical,  masterprocid, mpicom, ierr)
-
-    if (masterproc) then
-       write(iulog,*) 'iondrag options:'
-       write(iulog,*) '  efield_lflux_file = '//trim(efield_lflux_file)
-       write(iulog,*) '  efield_hflux_file = '//trim(efield_hflux_file)
-       write(iulog,*) '  efield_potential_max = ',efield_potential_max
-       write(iulog,*) '  empirical_ion_velocities = ',empirical_ion_velocities
-    end if
 
   end subroutine iondrag_readnl
 
@@ -416,7 +407,7 @@ contains
     ! initialize related packages: electric field
     !-------------------------------------------------------------------------------
 
-    call efield_init (efield_lflux_file, efield_hflux_file, efield_potential_max)
+    call efield_init (efield_lflux_file, efield_hflux_file, efield_wei96_file)
     call exbdrift_init( empirical_ion_velocities )
 
     id = get_spc_ndx('Op')
@@ -563,12 +554,10 @@ contains
     use efield, only: get_efield
 
     if (do_waccm_ions) then
-      if (empirical_ion_velocities .or. (is_first_step().and..not.ionvels_read_from_file)) then
        ! Compute the electric field
        call t_startf ('efield')
        call get_efield
        call t_stopf ('efield')
-      endif
     endif
 
   end subroutine iondrag_timestep_init
@@ -592,6 +581,7 @@ contains
     use exbdrift,      only: exbdrift_ion_vels
     use short_lived_species, only: slvd_pbf_ndx => pbf_idx
     use physics_buffer, only : physics_buffer_desc, pbuf_get_field, pbuf_set_field
+    use time_manager,   only : is_first_step
 
     !-------------------------------------------------------------------------------
     ! dummy arguments
@@ -1419,10 +1409,6 @@ contains
     deallocate( vi_tmp )
     deallocate( wi_tmp )
 
-    if (masterproc) then
-       write(iulog,*) 'iondrag_inidat: ionvels_read_from_file = ',ionvels_read_from_file
-    end if
- 
   end subroutine iondrag_inidat
 
 end module iondrag

@@ -29,11 +29,13 @@ platform, and checkin with these failures has been OK'd by the gatekeeper,
 then copy the lines from the td.*.status files for the failed tests to the
 appropriate machine below.  All failed tests must be justified.
 
-cheyenne/intel/aux_cam:
+derecho/intel:
 
-izumi/nag/aux_cam:
+derecho/intel/aux_cam:
 
-izumi/pgi/aux_cam:
+izumi/nag:
+
+izumi/pgi:
 
 CAM tag used for the baseline comparison tests if different than previous
 tag:

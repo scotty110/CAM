@@ -6,8 +6,7 @@ module thread_mod
        omp_set_num_threads, &
        omp_get_max_threads, &
        omp_get_num_threads, &
-       omp_get_nested,      &
-       omp_set_nested
+       omp_get_nested
 #endif
   use cam_logfile,            only: iulog
   use spmd_utils,             only: masterproc
@@ -24,7 +23,6 @@ module thread_mod
   public :: omp_get_max_threads
   public :: omp_get_num_threads
   public :: omp_get_nested
-  public :: omp_set_nested
   public :: initomp
 contains
 
@@ -57,10 +55,6 @@ contains
     omp_get_nested=0
   end function omp_get_nested
 
-  subroutine omp_set_nested(flag)
-    logical :: flag
-  end subroutine omp_set_nested
-
   subroutine initomp
     max_num_threads = 1
     if (masterproc) then
@@ -70,9 +64,7 @@ contains
 
 #else
   subroutine initomp
-    !$OMP PARALLEL
     max_num_threads = omp_get_num_threads()
-    !$OMP END PARALLEL
     if (masterproc) then
       write(iulog,*) "INITOMP: INFO: number of OpenMP threads = ", max_num_threads
     end if

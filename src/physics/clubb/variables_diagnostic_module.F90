@@ -1,5 +1,5 @@
 !-------------------------------------------------------------------------
-! $Id$
+! $Id: variables_diagnostic_module.F90 7376 2014-11-09 02:55:23Z bmg2@uwm.edu $
 !===============================================================================
 module variables_diagnostic_module
 
@@ -55,7 +55,7 @@ module variables_diagnostic_module
 
 !$omp threadprivate(rsat)
 
-  type(pdf_parameter), allocatable, public, save :: &
+  type(pdf_parameter), allocatable, dimension(:), target, public :: &
     pdf_params_zm, & ! pdf_params on momentum levels  [units vary]
     pdf_params_zm_frz !used when l_use_ice_latent = .true.
 
@@ -231,15 +231,13 @@ module variables_diagnostic_module
 !-----------------------------------------------------------------------
 
     use constants_clubb, only:  & 
-        em_min    ! Constant(s)
+        em_min, & ! Constant(s)
+        zero
 
     use parameters_model, only: & 
         hydromet_dim, & ! Variables
         sclr_dim, &
         edsclr_dim
-
-    use pdf_parameter_module, only: &
-        init_pdf_params    ! Procedure(s)
 
     use clubb_precision, only: &
         core_rknd ! Variable(s)
@@ -282,10 +280,8 @@ module variables_diagnostic_module
     allocate( radht(1:nz) )     ! SW + LW heating rate
 
     ! pdf_params on momentum levels
-    allocate( pdf_params_zm )
-    allocate( pdf_params_zm_frz )
-    call init_pdf_params( nz, pdf_params_zm )
-    call init_pdf_params( nz, pdf_params_zm_frz )
+    allocate( pdf_params_zm(1:nz) )
+    allocate( pdf_params_zm_frz(1:nz) )
 
     ! Second order moments
 
@@ -412,6 +408,82 @@ module variables_diagnostic_module
     Frad_LW_up = 0.0_core_rknd
     Frad_SW_down = 0.0_core_rknd
     Frad_LW_down = 0.0_core_rknd
+
+
+    ! pdf_params on momentum levels
+    pdf_params_zm(:)%w_1              = zero
+    pdf_params_zm(:)%w_2              = zero
+    pdf_params_zm(:)%varnce_w_1       = zero
+    pdf_params_zm(:)%varnce_w_2       = zero
+    pdf_params_zm(:)%rt_1              = zero
+    pdf_params_zm(:)%rt_2              = zero
+    pdf_params_zm(:)%varnce_rt_1       = zero
+    pdf_params_zm(:)%varnce_rt_2       = zero
+    pdf_params_zm(:)%thl_1             = zero
+    pdf_params_zm(:)%thl_2             = zero
+    pdf_params_zm(:)%varnce_thl_1      = zero
+    pdf_params_zm(:)%varnce_thl_2      = zero
+    pdf_params_zm(:)%rrtthl           = zero
+    pdf_params_zm(:)%alpha_thl        = zero
+    pdf_params_zm(:)%alpha_rt         = zero
+    pdf_params_zm(:)%crt_1             = zero
+    pdf_params_zm(:)%crt_2             = zero
+    pdf_params_zm(:)%cthl_1            = zero
+    pdf_params_zm(:)%cthl_2            = zero
+    pdf_params_zm(:)%chi_1            = zero
+    pdf_params_zm(:)%chi_2            = zero
+    pdf_params_zm(:)%stdev_chi_1      = zero
+    pdf_params_zm(:)%stdev_chi_2      = zero
+    pdf_params_zm(:)%stdev_eta_1      = zero
+    pdf_params_zm(:)%stdev_eta_2      = zero
+    pdf_params_zm(:)%covar_chi_eta_1  = zero
+    pdf_params_zm(:)%covar_chi_eta_2  = zero
+    pdf_params_zm(:)%corr_chi_eta_1   = zero
+    pdf_params_zm(:)%corr_chi_eta_2   = zero
+    pdf_params_zm(:)%rsatl_1           = zero
+    pdf_params_zm(:)%rsatl_2           = zero
+    pdf_params_zm(:)%rc_1              = zero
+    pdf_params_zm(:)%rc_2              = zero
+    pdf_params_zm(:)%cloud_frac_1     = zero
+    pdf_params_zm(:)%cloud_frac_2     = zero
+    pdf_params_zm(:)%mixt_frac        = zero
+
+    pdf_params_zm_frz(:)%w_1              = zero
+    pdf_params_zm_frz(:)%w_2              = zero
+    pdf_params_zm_frz(:)%varnce_w_1       = zero
+    pdf_params_zm_frz(:)%varnce_w_2       = zero
+    pdf_params_zm_frz(:)%rt_1              = zero
+    pdf_params_zm_frz(:)%rt_2              = zero
+    pdf_params_zm_frz(:)%varnce_rt_1       = zero
+    pdf_params_zm_frz(:)%varnce_rt_2       = zero
+    pdf_params_zm_frz(:)%thl_1             = zero
+    pdf_params_zm_frz(:)%thl_2             = zero
+    pdf_params_zm_frz(:)%varnce_thl_1      = zero
+    pdf_params_zm_frz(:)%varnce_thl_2      = zero
+    pdf_params_zm_frz(:)%rrtthl           = zero
+    pdf_params_zm_frz(:)%alpha_thl        = zero
+    pdf_params_zm_frz(:)%alpha_rt         = zero
+    pdf_params_zm_frz(:)%crt_1             = zero
+    pdf_params_zm_frz(:)%crt_2             = zero
+    pdf_params_zm_frz(:)%cthl_1            = zero
+    pdf_params_zm_frz(:)%cthl_2            = zero
+    pdf_params_zm_frz(:)%chi_1            = zero
+    pdf_params_zm_frz(:)%chi_2            = zero
+    pdf_params_zm_frz(:)%stdev_chi_1      = zero
+    pdf_params_zm_frz(:)%stdev_chi_2      = zero
+    pdf_params_zm_frz(:)%stdev_eta_1      = zero
+    pdf_params_zm_frz(:)%stdev_eta_2      = zero
+    pdf_params_zm_frz(:)%covar_chi_eta_1  = zero
+    pdf_params_zm_frz(:)%covar_chi_eta_2  = zero
+    pdf_params_zm_frz(:)%corr_chi_eta_1   = zero
+    pdf_params_zm_frz(:)%corr_chi_eta_2   = zero
+    pdf_params_zm_frz(:)%rsatl_1           = zero
+    pdf_params_zm_frz(:)%rsatl_2           = zero
+    pdf_params_zm_frz(:)%rc_1              = zero
+    pdf_params_zm_frz(:)%rc_2              = zero
+    pdf_params_zm_frz(:)%cloud_frac_1     = zero
+    pdf_params_zm_frz(:)%cloud_frac_2     = zero
+    pdf_params_zm_frz(:)%mixt_frac        = zero
 
     ! Second order moments
     thlprcp = 0.0_core_rknd

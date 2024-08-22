@@ -138,7 +138,7 @@ end subroutine microp_aero_register
 
 !=========================================================================================
 
-subroutine microp_aero_init(pbuf2d)
+subroutine microp_aero_init
 
    !----------------------------------------------------------------------- 
    ! 
@@ -148,8 +148,6 @@ subroutine microp_aero_init(pbuf2d)
    ! Author: Andrew Gettelman May 2010
    ! 
    !-----------------------------------------------------------------------
-
-   type(physics_buffer_desc), pointer :: pbuf2d(:,:)
 
    ! local variables
    integer  :: iaer, ierr
@@ -300,7 +298,7 @@ subroutine microp_aero_init(pbuf2d)
       call add_default ('WSUB     ', 1, ' ')
    end if
 
-   call nucleate_ice_cam_init(mincld, bulk_scale, pbuf2d)
+   call nucleate_ice_cam_init(mincld, bulk_scale)
    call hetfrz_classnuc_cam_init(mincld)
 
 end subroutine microp_aero_init

@@ -1,4 +1,4 @@
-! $Id$
+! $Id: code_timer_module.F90 77826 2016-04-07 23:05:53Z cacraig@ucar.edu $
 module code_timer_module
 
 ! Description:

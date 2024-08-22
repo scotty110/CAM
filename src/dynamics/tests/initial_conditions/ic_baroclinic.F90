@@ -74,7 +74,7 @@ module ic_baroclinic
 contains
 
   subroutine bc_wav_set_ic(vcoord,latvals, lonvals, U, V, T, PS, PHIS, &
-       Q, Z, m_cnst, mask, verbose)
+       Q, m_cnst, mask, verbose)
     use dyn_tests_utils,     only: vc_moist_pressure, vc_dry_pressure, vc_height
     use constituents,        only: cnst_name
     use const_init,          only: cnst_init_default
@@ -95,9 +95,8 @@ contains
     real(r8), optional, intent(inout) :: V(:,:)     ! meridional velocity
     real(r8), optional, intent(inout) :: T(:,:)     ! temperature
     real(r8), optional, intent(inout) :: PS(:)      ! surface pressure
-    real(r8), optional, intent(out)   :: PHIS(:)    ! surface geopotential
+    real(r8), optional, intent(inout) :: PHIS(:)    ! surface geopotential
     real(r8), optional, intent(inout) :: Q(:,:,:)   ! tracer (ncol, lev, m)
-    real(r8), optional, intent(inout) :: Z(:,:)     ! height (ncol, lev)
     integer,  optional, intent(in)    :: m_cnst(:)  ! tracer indices (reqd. if Q)
     logical,  optional, intent(in)    :: mask(:)    ! only init where .true.
     logical,  optional, intent(in)    :: verbose    ! for internal use
@@ -116,7 +115,6 @@ contains
     logical                           :: lU, lV, lT, lQ, l3d_vars
     logical                           :: cnst1_is_moisture
     real(r8), allocatable             :: pdry_half(:), pwet_half(:),zdry_half(:),zk(:)
-    real(r8), allocatable             :: zlocal(:,:)! height of full level p for test tracer initialization
 
     if ((vcoord == vc_moist_pressure) .or. (vcoord == vc_dry_pressure)) then
       !
@@ -194,7 +192,9 @@ contains
     !*******************************
     !
     if (present(PHIS)) then
-      PHIS = 0.0_r8
+      where(mask_use)
+        PHIS = 0.0_r8
+      end where
       if(masterproc .and. verbose_use) then
         write(iulog,*) '          PHIS initialized by "',subname,'"'
       end if
@@ -211,7 +211,7 @@ contains
     lv = present(V)
     lT = present(T)
     lq = present(Q)
-    l3d_vars = lu .or. lv .or. lt .or. lq
+    l3d_vars = lu .or. lv .or. lt .or.lq
     nlev = -1
     if (l3d_vars) then
       if (lu) nlev = size(U, 2)
@@ -222,10 +222,9 @@ contains
          nlev = size(Q, 2)
          ! check whether first constituent in Q is water vapor.
          cnst1_is_moisture = m_cnst(1) == 1
-         allocate(zlocal(size(Q, 1),nlev))         
       end if
 
-      allocate(zk(nlev))
+      allocate(zk(nlev+1))
       if ((lq.or.lt) .and. (vcoord == vc_dry_pressure)) then
         allocate(pdry_half(nlev+1))
         allocate(pwet_half(nlev+1))
@@ -250,16 +249,6 @@ contains
             ! find height of pressure surface
             zk(k) = iterate_z_given_pressure(pk,(vcoord == vc_dry_pressure),ptop,latvals(i),ztop)
           end do
-
-          if (lq) then
-            if (present(Z)) then
-              zlocal(i,1:nlev) = Z(i,1:nlev)
-            else
-              zlocal(i,1:nlev) = zk(:)
-            end if
-          end if
-          
-
           do k=1,nlev
             !
             ! wind components
@@ -338,9 +327,19 @@ contains
           if (m_cnst(m) == 1) cycle
 
           call cnst_init_default(m_cnst(m), latvals, lonvals, Q(:,:,m),&
-               mask=mask_use, verbose=verbose_use, notfound=.false.,&
-               z=zlocal)               
-          
+               mask=mask_use, verbose=verbose_use, notfound=.false.)
+#if 0
+          do k = 1, nlev
+            do i=1,ncol
+              if (mask_use(i)) then
+                Q(i,k,m) = test_func(latvals(i),lonvals(i), k, m)
+              end if
+            end do
+          end do
+          if(masterproc .and. verbose_use) then
+            write(iulog,*) '          ', trim(cnst_name(m_cnst(m))), ' initialized by "',subname,'"'
+          end if
+#endif
         end do
 
       end if ! vcoord
@@ -400,7 +399,7 @@ contains
        p1 = p2
     END DO
     if (ix==1001) then
-      write(iulog,*) "p,p1,z1",p,p1,z1
+      write(*,*) "p,p1,z1",p,p1,z1
       call endrun('iteration did not converge in iterate_z_given_pressure')
     end if
     iterate_z_given_pressure = z2

@@ -14,7 +14,7 @@ module scamMod
   ! this module provide flexibility to affect the forecast by overriding
   ! parameterization prognosed tendencies with observed tendencies
   ! of a particular field program recorded on the IOP file.
-  ! 
+  !
   ! Public functions/subroutines:
   !   scam_readnl
   !-----------------------------------------------------------------------
@@ -354,8 +354,8 @@ subroutine scam_readnl(nlfile,single_column_in,scmlat_in,scmlon_in)
               exit
            end if
         end do
-        print *
      end if
+
   end if
      
 end subroutine scam_readnl
