@@ -1019,7 +1019,7 @@ contains
 #endif
 
     print *, "MADE IT HERE"
-    call print_cam(phys_state)
+    call print_cam(phys_state, cam_in)
 
     ! The following initialization depends on the import state (cam_in)
     ! being initialized.  This isn't true when cam_init is called, so need
