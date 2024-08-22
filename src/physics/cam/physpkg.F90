@@ -35,6 +35,9 @@ module physpkg
   use modal_aero_calcsize,    only: modal_aero_calcsize_init, modal_aero_calcsize_diag, modal_aero_calcsize_reg
   use modal_aero_wateruptake, only: modal_aero_wateruptake_init, modal_aero_wateruptake_dr, modal_aero_wateruptake_reg
 
+   ! Custom 
+   use simple_print,       only: print_cam
+
   implicit none
   private
   save
@@ -1147,6 +1150,11 @@ contains
     call t_barrierf('sync_ac_physics', mpicom)
     call t_startf ('ac_physics')
     call t_adj_detailf(+1)
+
+    ! Add ML model
+    ! TODO
+    print *, 'ML model implemented'
+    call print_cam(phys_state, cam_in)
 
 !$OMP PARALLEL DO PRIVATE (C, NCOL, phys_buffer_chunk)
 
