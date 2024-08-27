@@ -1,6 +1,6 @@
 module cam_nn 
     ! Import precision info from iso
-    use, intrinsic :: iso_fortran_env, only : dp => r8
+    use, intrinsic :: iso_fortran_env, only : dp => real64
 
     use ftorch
 
@@ -12,7 +12,7 @@ module cam_nn
     public :: init_model, inference 
 
 contains
-     subroutine init_model(model)
+    subroutine init_model(model)
         ! Initialize the model
         call torch_model_load(model, "/weights/cam_nn.pt", torch_kCPU)
     end subroutine init_model
