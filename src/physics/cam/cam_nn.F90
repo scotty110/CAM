@@ -1,15 +1,17 @@
-module cam_nn 
+module cam_nn
     use ftorch
     use camsrfexch,     only: cam_in_t
     use physics_types,  only: physics_state
     implicit none
 
+    public :: torch_inference
 
-    public :: init_torch_model, torch_inference 
-    
-    type(torch_model) :: model
+    ! Declare the torch model without initializing it here
+    type(torch_model), save :: model
+    logical, save :: model_initialized = .false.
 
 contains
+
     subroutine init_torch_model(model)
         ! Initialize the model
         type(torch_model), intent(inout) :: model
@@ -29,6 +31,12 @@ contains
 
         integer :: tensor_layout_4d(4) = [4,3,2,1]
         integer :: tensor_layout_3d(3) = [3,2,1]
+
+        ! Initialize the model if it has not been initialized yet
+        if (.not. model_initialized) then
+            call init_torch_model(model)
+            model_initialized = .true.
+        end if
 
         ! Check for empty arrays
         if (size(phys_state) == 0) then

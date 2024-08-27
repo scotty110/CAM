@@ -36,8 +36,10 @@ module physpkg
   use modal_aero_wateruptake, only: modal_aero_wateruptake_init, modal_aero_wateruptake_dr, modal_aero_wateruptake_reg
 
    ! Custom 
-   use simple_print,       only: print_cam
-   use cam_nn,             only: init_torch_model, torch_inference
+   !use ftorch,             only: torch_model  
+   !use simple_print,       only: print_cam
+   !use cam_nn,             only: init_torch_model, torch_inference
+   use cam_nn,             only: torch_inference
 
   implicit none
   private
@@ -1155,7 +1157,8 @@ contains
     ! Add ML model
     ! TODO
     print *, 'ML model implemented'
-    call print_cam(phys_state, cam_in)
+    !call print_cam(phys_state, cam_in)
+    !call torch_inference(phys_state, cam_in, model)
     call torch_inference(phys_state, cam_in)
 
 !$OMP PARALLEL DO PRIVATE (C, NCOL, phys_buffer_chunk)
