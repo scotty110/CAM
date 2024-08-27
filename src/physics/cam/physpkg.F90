@@ -37,6 +37,7 @@ module physpkg
 
    ! Custom 
    use simple_print,       only: print_cam
+   use cam_nn,             only: init_torch_model, torch_inference
 
   implicit none
   private
@@ -1155,6 +1156,7 @@ contains
     ! TODO
     print *, 'ML model implemented'
     call print_cam(phys_state, cam_in)
+    call inference(phys_state, cam_in)
 
 !$OMP PARALLEL DO PRIVATE (C, NCOL, phys_buffer_chunk)
 
