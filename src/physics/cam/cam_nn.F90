@@ -4,24 +4,22 @@ module cam_nn
     use physics_types,  only: physics_state
     implicit none
 
-    ! Torch Types
-    !type(torch_model) :: model
 
-    public :: init_model, inference 
+    public :: init_torch_model, torch_inference 
     
     type(torch_model) :: model
 
 contains
     subroutine init_torch_model(model)
         ! Initialize the model
+        type(torch_model), intent(inout) :: model
         call torch_model_load(model, "/weights/cam_nn.pt", torch_kCPU)
-    end subroutine init_model
+    end subroutine init_torch_model
 
     subroutine torch_inference(phys_state, cam_in)
         ! CAM Types
-        type(physics_state), intent(inout), dimension(begchunk:endchunk) :: phys_state
-        type(cam_in_t),      intent(in), dimension(begchunk:endchunk) :: cam_in
-
+        type(physics_state), intent(inout) :: phys_state(:)
+        type(cam_in_t),      intent(in) :: cam_in(:)
 
         ! Torch Types
         type(torch_tensor), dimension(2) :: in_tensors
@@ -33,7 +31,7 @@ contains
         integer :: tensor_layout_3d(3) = [3,2,1]
 
         ! Check for empty arrays
-        if (size(physics_state) == 0) then
+        if (size(phys_state) == 0) then
             print *, "ERROR: Empty physics state array"
             stop
         end if
@@ -57,9 +55,6 @@ contains
         !call torch_tensor_delete(in_tensors(2))
         !call torch_tensor_delete(out_tensors(1))
     
-    end subroutine inference
-
-
-
+    end subroutine torch_inference
 
 end module cam_nn
