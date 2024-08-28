@@ -24,13 +24,18 @@ contains
         type(cam_in_t),      intent(in) :: cam_in(:)
 
         ! Torch Types
-        type(torch_tensor), dimension(2) :: in_tensors
+        type(torch_tensor), dimension(1) :: in_tensors
         type(torch_tensor), dimension(1) :: out_tensors
 
-        ! Make input tensors ???
+        ! Make input tensors
+        real(8), allocatable :: phys_state_t_array(:,:,:)
+        real(8), allocatable :: new_phys_state_t_array(:,:,:)
 
         integer :: tensor_layout_4d(4) = [4,3,2,1]
         integer :: tensor_layout_3d(3) = [3,2,1]
+
+        ! ints 
+        integer :: i, m, n
 
         ! Initialize the model if it has not been initialized yet
         if (.not. model_initialized) then
@@ -49,19 +54,31 @@ contains
             stop
         end if
 
+        ! Make Temp Tensor
+        m = size(phys_state(1)%t, 1)  ! Number of rows
+        n = size(phys_state(1)%t, 2)  ! Number of columns
+
+        allocate(phys_state_t_array(size(phys_state), m, n))
+        allocate(new_phys_state_t_array(size(phys_state), m, n))
+
+        do i = 1, size(phys_state)
+            phys_state_t_array(i, :, :) = phys_state(i)%t
+        end do
+
         ! Make Torch Tensors for input and output
+        call torch_tensor_from_array(in_tensors(1), phys_state_t_array, tensor_layout_3d, torch_kCPU)
         !call torch_tensor_from_array(in_tensors(1), in_x, tensor_layout_4d, torch_kCPU)
         !call torch_tensor_from_array(in_tensors(2), landmass, tensor_layout_3d, torch_kCPU)
 
-        !call torch_tensor_from_array(out_tensors(1), out_y, tensor_layout_4d, torch_kCPU)
+        call torch_tensor_from_array(out_tensors(1), new_phys_state_t_array, tensor_layout_3d, torch_kCPU)
 
         ! Perform inference
-        !call torch_model_forward(model, in_tensors, out_tensors)
+        call torch_model_forward(model, in_tensors, out_tensors)
 
         ! Free Memory
-        !call torch_tensor_delete(in_tensors(1))
+        call torch_tensor_delete(in_tensors(1))
         !call torch_tensor_delete(in_tensors(2))
-        !call torch_tensor_delete(out_tensors(1))
+        call torch_tensor_delete(out_tensors(1))
     
     end subroutine torch_inference
 
