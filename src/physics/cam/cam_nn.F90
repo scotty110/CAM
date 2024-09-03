@@ -31,7 +31,6 @@ contains
         real(8), allocatable :: phys_state_t_array(:,:,:)
         real(8), allocatable :: new_phys_state_t_array(:,:,:)
 
-        integer :: tensor_layout_4d(4) = [4,3,2,1]
         integer :: tensor_layout_3d(3) = [3,2,1]
 
         ! ints 
@@ -45,12 +44,12 @@ contains
 
         ! Check for empty arrays
         if (size(phys_state) == 0) then
-            print *, "ERROR: Empty physics state array"
+            print *, "ERROR: Empty state array"
             stop
         end if
 
-        if(size(cam_in) == 0) then
-            print *, "ERROR: Empty cam_in array"
+        if(size(cam_in) /= size(phys_state)) then
+            print *, "ERROR: cam_in and phys_state arrays must be the same size"
             stop
         end if
 
@@ -67,17 +66,19 @@ contains
 
         ! Make Torch Tensors for input and output
         call torch_tensor_from_array(in_tensors(1), phys_state_t_array, tensor_layout_3d, torch_kCPU)
-        !call torch_tensor_from_array(in_tensors(1), in_x, tensor_layout_4d, torch_kCPU)
-        !call torch_tensor_from_array(in_tensors(2), landmass, tensor_layout_3d, torch_kCPU)
 
         call torch_tensor_from_array(out_tensors(1), new_phys_state_t_array, tensor_layout_3d, torch_kCPU)
 
         ! Perform inference
         call torch_model_forward(model, in_tensors, out_tensors)
 
+        ! Copy the output tensor back to the physics state
+        do i = 1, size(phys_state)
+            phys_state(i)%t = new_phys_state_t_array(i, :, :)
+        end do
+
         ! Free Memory
         call torch_tensor_delete(in_tensors(1))
-        !call torch_tensor_delete(in_tensors(2))
         call torch_tensor_delete(out_tensors(1))
     
     end subroutine torch_inference
