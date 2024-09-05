@@ -2,6 +2,7 @@ module cam_nn
     use ftorch
     use camsrfexch,     only: cam_in_t
     use physics_types,  only: physics_state
+    use mpi             ! Include the MPI module for MPI functionalities
     implicit none
 
     public :: torch_inference
@@ -33,14 +34,21 @@ contains
 
         integer :: tensor_layout_3d(3) = [3,2,1]
 
-        ! ints 
+        ! Integers
         integer :: i, m, n
+        integer :: rank, ierr  ! Variables to store MPI rank and error code
 
+        ! Initialize MPI and get the rank of the process
+        call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+        
         ! Initialize the model if it has not been initialized yet
         if (.not. model_initialized) then
             call init_torch_model(model)
             model_initialized = .true.
         end if
+        
+        ! Print the MPI rank
+        print *, "MPI Rank: ", rank, " - Columns: ", size(phys_state)
 
         ! Check for empty arrays
         if (size(phys_state) == 0) then
