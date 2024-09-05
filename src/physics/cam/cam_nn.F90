@@ -19,61 +19,59 @@ contains
         call torch_model_load(model, "/weights/cam_nn.pt", torch_kCPU)
     end subroutine init_torch_model
 
-    subroutine torch_inference(phys_state, cam_in)
+    subroutine torch_inference(phys_state)
         ! CAM Types
         type(physics_state), intent(inout) :: phys_state(:)
-        type(cam_in_t),      intent(in) :: cam_in(:)
 
         ! Torch Types
-        type(torch_tensor), dimension(1) :: in_tensors
+        type(torch_tensor), dimension(3) :: in_tensors
         type(torch_tensor), dimension(1) :: out_tensors
 
         ! Make input tensors
         real(8), allocatable :: phys_state_t_array(:,:,:)
+        real(8), allocatable :: phys_state_pmid_array(:,:,:)
+        real(8), allocatable :: phys_state_q_array(:,:,:,:)
         real(8), allocatable :: new_phys_state_t_array(:,:,:)
 
         integer :: tensor_layout_3d(3) = [3,2,1]
+        integer :: tensor_layout_4d(4) = [4,3,2,1]
 
         ! Integers
         integer :: i, m, n
-        integer :: rank, ierr  ! Variables to store MPI rank and error code
 
-        ! Initialize MPI and get the rank of the process
-        call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
-        
         ! Initialize the model if it has not been initialized yet
         if (.not. model_initialized) then
             call init_torch_model(model)
             model_initialized = .true.
         end if
-        
-        ! Print the MPI rank
-        print *, "MPI Rank: ", rank, " - Columns: ", size(phys_state)
+       
 
-        ! Check for empty arrays
-        if (size(phys_state) == 0) then
-            print *, "ERROR: Empty state array"
-            stop
-        end if
-
-        if(size(cam_in) /= size(phys_state)) then
-            print *, "ERROR: cam_in and phys_state arrays must be the same size"
-            stop
-        end if
-
-        ! Make Temp Tensor
+        ! Make Temp/pressure Tensor
         m = size(phys_state(1)%t, 1)  ! Number of rows
         n = size(phys_state(1)%t, 2)  ! Number of columns
 
         allocate(phys_state_t_array(size(phys_state), m, n))
+        allocate(phys_state_pmid_array(size(phys_state), m, n))
         allocate(new_phys_state_t_array(size(phys_state), m, n))
 
+        ! Make Mixing ratio Tensor
+        m = size(phys_state(1)%q, 1)  ! Number of rows
+        n = size(phys_state(1)%q, 2)  ! Number of columns
+        i = size(phys_state(1)%q, 3)  ! Number of levels
+
+        allocate(phys_state_q_array(size(phys_state), m, n, i))
+        
         do i = 1, size(phys_state)
             phys_state_t_array(i, :, :) = phys_state(i)%t
+            phys_state_pmid_array(i, :, :) = phys_state(i)%pmid
+            phys_state_q_array(i, :, :, :) = phys_state(i)%q
         end do
+
 
         ! Make Torch Tensors for input and output
         call torch_tensor_from_array(in_tensors(1), phys_state_t_array, tensor_layout_3d, torch_kCPU)
+        call torch_tensor_from_array(in_tensors(2), phys_state_pmid_array, tensor_layout_3d, torch_kCPU)
+        call torch_tensor_from_array(in_tensors(3), phys_state_q_array, tensor_layout_4d, torch_kCPU)
 
         call torch_tensor_from_array(out_tensors(1), new_phys_state_t_array, tensor_layout_3d, torch_kCPU)
 

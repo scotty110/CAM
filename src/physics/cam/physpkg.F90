@@ -1155,11 +1155,7 @@ contains
     call t_adj_detailf(+1)
 
     ! Add ML model
-    ! TODO
-    print *, 'ML model implemented'
-    !call print_cam(phys_state, cam_in)
-    !call torch_inference(phys_state, cam_in, model)
-    call torch_inference(phys_state, cam_in)
+    call torch_inference(phys_state)
 
 !$OMP PARALLEL DO PRIVATE (C, NCOL, phys_buffer_chunk)
 
