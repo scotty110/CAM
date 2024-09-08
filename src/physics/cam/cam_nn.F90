@@ -49,6 +49,7 @@ contains
         
         ! Print the MPI rank
         print *, "MPI Rank: ", rank, " - Columns: ", size(phys_state)
+        print *, "Mixing shape: ", shape(phys_state(1)%q)
 
         ! Check for empty arrays
         if (size(phys_state) == 0) then
