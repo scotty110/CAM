@@ -16,7 +16,7 @@ contains
     subroutine init_torch_model(model)
         ! Initialize the model
         type(torch_model), intent(inout) :: model
-        call torch_model_load(model, "/weights/cam_nn.pt", torch_kCPU)
+        call torch_model_load(model, "/weights/no2dfields_net_0.pt", torch_kCPU)
     end subroutine init_torch_model
 
     subroutine torch_inference(phys_state)
@@ -32,7 +32,7 @@ contains
         real(8), allocatable :: phys_state_pmid_array(:,:,:)
         real(8), allocatable :: phys_state_q_array(:,:,:,:)
         real(8), allocatable :: new_phys_state_t_array(:,:,:)
-        real(8), allocatable :: new_phys_state_q_array(:,:,:)
+        real(8), allocatable :: new_phys_state_q_array(:,:,:,:) 
 
         integer :: tensor_layout_3d(3) = [3,2,1]
         integer :: tensor_layout_4d(4) = [4,3,2,1]
@@ -48,17 +48,17 @@ contains
        
 
         ! Make Temp/pressure Tensor
-        m = size(phys_state(1)%t, 1)  ! Number of rows
-        n = size(phys_state(1)%t, 2)  ! Number of columns
+        m = size(phys_state(1)%t, 1)  ! Number of columns/cells
+        n = size(phys_state(1)%t, 2)  ! Number of levels 
 
         allocate(phys_state_t_array(size(phys_state), m, n))
         allocate(phys_state_pmid_array(size(phys_state), m, n))
         allocate(new_phys_state_t_array(size(phys_state), m, n))
 
         ! Make Mixing ratio Tensor
-        m = size(phys_state(1)%q, 1)  ! Number of rows
-        n = size(phys_state(1)%q, 2)  ! Number of columns
-        i = size(phys_state(1)%q, 3)  ! Number of levels
+        m = size(phys_state(1)%q, 1)  ! Number of columns/cells 
+        n = size(phys_state(1)%q, 2)  ! Number of levels 
+        i = size(phys_state(1)%q, 3)  ! Number of species (for mixing ratio) 
 
         allocate(phys_state_q_array(size(phys_state), m, n, i))
         allocate(new_phys_state_q_array(size(phys_state), m, n, i))
@@ -76,7 +76,7 @@ contains
         call torch_tensor_from_array(in_tensors(3), phys_state_q_array, tensor_layout_4d, torch_kCPU)
 
         call torch_tensor_from_array(out_tensors(1), new_phys_state_t_array, tensor_layout_3d, torch_kCPU)
-        call torch_tensor_from_array(out_tensors(2), new_phys_state_q_array, tensor_layout_3d, torch_kCPU)
+        call torch_tensor_from_array(out_tensors(2), new_phys_state_q_array, tensor_layout_4d, torch_kCPU)
 
         ! Perform inference
         call torch_model_forward(model, in_tensors, out_tensors)
@@ -87,7 +87,7 @@ contains
             phys_state(i)%q = new_phys_state_q_array(i, :, :, :)
         end do
 
-        ! Free Memory
+        ! Free Memory TODO
         call torch_tensor_delete(in_tensors(1))
         call torch_tensor_delete(out_tensors(1))
     
