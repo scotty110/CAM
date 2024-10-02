@@ -16,7 +16,7 @@ contains
     subroutine init_torch_model(model)
         ! Initialize the model
         type(torch_model), intent(inout) :: model
-        call torch_model_load(model, "/weights/no2dfields_net_0.pt", torch_kCPU)
+        call torch_model_load(model, "/weights/cam_nn_model.pt", torch_kCPU)
     end subroutine init_torch_model
 
     subroutine torch_inference(phys_state)
